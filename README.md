@@ -52,3 +52,22 @@ npm run start:dev
 ## Database migrations
 
 TypeORM `synchronize`는 사용하지 않는다. 스키마 변경은 `src/database/migrations`에 migration을 추가하고 `npm run migration:run`으로 적용한다.
+
+## 상권별 유동인구 가져오기
+
+서울 열린데이터광장의 `VwsmTrdarFlpopQq` API를 분기와 1,000행 단위로 반복 조회해
+`commercial_area_floating_population_statistic`에 upsert한다. `.env`에 발급받은
+`SEOUL_OPEN_DATA_API_KEY`를 설정하고 migration 적용 후 실행한다.
+
+```bash
+npm run migration:run
+npm run import:floating-population
+```
+
+기본 범위는 2025년 1분기부터 2026년 4분기까지다. 아직 공표되지 않아 API가
+`INFO-200`을 반환한 분기는 건너뛴다. 범위 지정과 DB 적재 없는 검증도 가능하다.
+
+```bash
+npm run import:floating-population -- --from 20251 --to 20262
+npm run import:floating-population -- --from 20251 --to 20264 --dry-run
+```

@@ -27,7 +27,8 @@ database if existing local data must be preserved.
 shasum -a 256 -c skthon-preprocessed-20260911.dump.sha256
 ```
 
-The dump was produced with PostgreSQL 17.11 / `pg_dump` 17.11 and verified by
-an actual restore plus `pg_restore --list` (212 archive entries). It includes
-the REB vacancy source schema, 69 statistical-area polygons, 173 reporting
-areas, and 1,384 quarterly observations.
+The dump was produced with PostgreSQL 17.11 / `pg_dump` 17.11 and includes the
+2025 Q1 through 2026 Q2 commercial-area floating-population snapshot: 9,892
+observations across 1,650 commercial areas. It also includes the REB vacancy
+source schema, 69 statistical-area polygons, 173 reporting areas, and 1,384
+quarterly observations.

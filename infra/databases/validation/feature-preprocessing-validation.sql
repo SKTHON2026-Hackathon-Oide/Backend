@@ -5,6 +5,8 @@ DECLARE
   invalid_link_count bigint;
   invalid_score_count bigint;
   invalid_geometry_count bigint;
+  floating_population_count bigint;
+  invalid_floating_population_count bigint;
   staging_table_count bigint;
 BEGIN
   SELECT count(*) INTO missing_category_count
@@ -39,6 +41,19 @@ BEGIN
   ) AS geometries
   WHERE geom IS NULL OR ST_IsEmpty(geom) OR ST_SRID(geom) <> 5186 OR NOT ST_IsValid(geom);
 
+  SELECT count(*) INTO floating_population_count
+  FROM public.commercial_area_floating_population_statistic;
+
+  SELECT count(*) INTO invalid_floating_population_count
+  FROM public.commercial_area_floating_population_statistic AS statistic
+  LEFT JOIN public.commercial_area AS area
+    ON area.id = statistic.commercial_area_id
+  WHERE area.id IS NULL
+     OR statistic.base_period IS NULL
+     OR statistic.total_population < 0
+     OR statistic.male_population < 0
+     OR statistic.female_population < 0;
+
   SELECT count(*) INTO staging_table_count
   FROM pg_class AS relation
   JOIN pg_namespace AS schema_row ON schema_row.oid = relation.relnamespace
@@ -50,13 +65,17 @@ BEGIN
      OR invalid_link_count > 0
      OR invalid_score_count > 0
      OR invalid_geometry_count > 0
+     OR floating_population_count = 0
+     OR invalid_floating_population_count > 0
      OR staging_table_count > 0 THEN
     RAISE EXCEPTION
-      'Preprocessing validation failed (missing categories %, invalid links %, invalid scores %, invalid geometries %, staging tables %).',
+      'Preprocessing validation failed (missing categories %, invalid links %, invalid scores %, invalid geometries %, floating population %, invalid floating population %, staging tables %).',
       missing_category_count,
       invalid_link_count,
       invalid_score_count,
       invalid_geometry_count,
+      floating_population_count,
+      invalid_floating_population_count,
       staging_table_count;
   END IF;
 
@@ -67,6 +86,8 @@ $validation$;
 SELECT
   (SELECT count(*) FROM public.business_category) AS canonical_category_count,
   (SELECT count(*) FROM public.store_category_mapping) AS source_mapping_count,
+  (SELECT count(*) FROM public.commercial_area_floating_population_statistic)
+    AS commercial_area_floating_population_count,
   (SELECT count(*) FROM public.store WHERE service_business_category_code IS NOT NULL)
     AS normalized_store_count,
   (SELECT count(*) FROM public.commercial_area_building) AS building_area_link_count,

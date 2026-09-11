@@ -11,6 +11,7 @@ FROM (VALUES
   ('commercial_area_building'),
   ('area_business_feature'),
   ('sales_statistic'),
+  ('commercial_area_floating_population_statistic'),
   ('store'),
   ('land_use_zone'),
   ('commercial_area_feature')

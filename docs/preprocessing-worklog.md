@@ -18,12 +18,14 @@
 | `commercial_area` | 1,650 |
 | `store` | 554,092 |
 | `sales_statistic` | 85,732 |
+| `commercial_area_floating_population_statistic` | 9,892 |
 | `area_business_feature` | 304,775 |
 | `land_use_zone` | 17 |
 | `commercial_area_building` | 0 (작업 전) |
 
-`commercial_area_feature`는 유동인구·임대료 데이터를 MVP에서 제외했으므로 빈 상태를
-정상으로 간주한다. 누락 데이터를 0으로 만들어 채우지 않는다.
+`commercial_area_feature`는 유동인구·임대료의 가공 피처 테이블이므로 빈 상태를
+정상으로 간주한다. 원천 유동인구는
+`commercial_area_floating_population_statistic`에 분기별로 보관한다.
 
 ## 실행 결과
 
@@ -40,7 +42,7 @@
 | 수요도 계산 | 84,696 |
 
 공간 연결의 고아 참조와 점수 범위 오류는 0건이며, `stg_*` 테이블도 남아 있지
-않다. TypeORM 마이그레이션 8개가 모두 적용되었고 `npm run build`와 변경 파일
+않다. TypeORM 마이그레이션 10개가 모두 적용되었고 `npm run build`와 변경 파일
 대상 lint도 통과했다.
 
 ## 변경 내역
@@ -114,6 +116,20 @@ overlap_ratio = ST_Area(ST_Intersection(building, area))
 
 - `src/database/migrations/0000000000007-add-feature-calculation-indexes.ts`
 - `infra/databases/features/area_business_feature/area-business-score-v1.sql`
+
+### 5. 상권별 유동인구 원천 시드
+
+- 서울 열린데이터광장 `VwsmTrdarFlpopQq` API에서 2025년 1분기부터 2026년
+  2분기까지 내려받은 9,892건을 상권 코드로 `commercial_area`에 연결한다.
+- 상권·분기마다 성별, 연령대, 시간대, 요일별 유동인구를 보관한다.
+- 빈 DB 부트스트랩은 API 키 없이도 재현되도록 SQL 시드를 사용한다. 최신 분기를
+  추가할 때는 `npm run import:floating-population` 실행 후 시드와 전체 덤프를 함께
+  갱신한다.
+
+관련 파일:
+
+- `src/database/migrations/0000000000009-create-commercial-area-floating-population.ts`
+- `infra/databases/seeds/commercial_area_floating_population/commercial-area-floating-population-seed.sql`
 - `infra/databases/features/area_business_feature/area-business-score-validation.sql`
 
 ## 빈 DB 일괄 실행
@@ -132,15 +148,17 @@ cd /Users/hoshi/Desktop/skthon/backend
 1. TypeORM 마이그레이션 실행
 2. 행정구역 적재
 3. 상권 영역 적재
-4. 원본 상가 적재
-5. 추정매출 적재
-6. 상권별 점포 통계 적재 및 매출 점포 수 보완
-7. 건축물 적재
-8. 용도지역 적재
-9. 업종 사전·원본 업종 매핑 적재
-10. 건축물-상권 공간 조인
-11. 경쟁도·수요도 계산
-12. 최종 검증
+4. 상권별 유동인구 시드 적재
+5. 원본 상가 적재
+6. 추정매출 적재
+7. 상권별 점포 통계 적재 및 매출 점포 수 보완
+8. 건축물 적재
+9. 용도지역 적재
+10. 업종 사전·원본 업종 매핑 적재
+11. 건축물-상권 공간 조인
+12. 경쟁도·수요도 계산
+13. 최종 검증
+14. REB 공실률 통계 적재
 
 실제 SQL 파일만 실행하고 싶다면 먼저 `npm run migration:run`을 실행한 후 다음
 파일을 `psql`로 호출한다.
@@ -185,5 +203,5 @@ infra/databases/validation/feature-preprocessing-validation.sql
 - 초기 DB가 아닌 기존 DB에서 `0000000000006`을 적용할 때
   `commercial_area_building`에 이미 데이터가 있으면 먼저 백업·검토한다.
 - `gis_building`은 현재 사용하지 않는 레거시 테이블로 유지한다.
-- 유동인구와 임대료 데이터를 추가하지 않았으므로 `commercial_area_feature`는
-  당분간 비워 둔다.
+- `commercial_area_feature`는 가공 피처 테이블이므로 원천 유동인구를 직접
+  복제하지 않는다.
