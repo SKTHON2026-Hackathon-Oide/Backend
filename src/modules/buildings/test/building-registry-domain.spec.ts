@@ -8,10 +8,12 @@ describe('building registry domain services', () => {
     expect(factory.create('1111010100100120000')).toEqual({
       sigunguCd: '11110',
       bjdongCd: '10100',
-      platGbCd: '1',
+      platGbCd: '0',
       bun: '0012',
       ji: '0000',
     });
+    expect(factory.create('1111010100200120000').platGbCd).toBe('1');
+    expect(factory.create('1111010100300120000').platGbCd).toBe('2');
     expect(factory.create('1111010100000120003').ji).toBe('0003');
     expect(() => factory.create('123')).toThrow();
     expect(() => factory.create('1111010100A0120000')).toThrow();
