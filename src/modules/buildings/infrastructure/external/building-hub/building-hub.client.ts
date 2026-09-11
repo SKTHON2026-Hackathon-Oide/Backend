@@ -31,9 +31,9 @@ export class BuildingHubClient implements BuildingRegistryGateway {
     }
 
     const [basisPage, floorPage, areaPage] = await Promise.all([
-      this.fetchAll('/getBrBasisOulnInfo', serviceKey, query),
-      this.fetchAll('/getBrFlrOulnInfo', serviceKey, query),
-      this.fetchAll('/getBrExposPubuseAreaInfo', serviceKey, query),
+      this.fetchAll('getBrBasisOulnInfo', serviceKey, query),
+      this.fetchAll('getBrFlrOulnInfo', serviceKey, query),
+      this.fetchAll('getBrExposPubuseAreaInfo', serviceKey, query),
     ]);
 
     return {
@@ -83,7 +83,10 @@ export class BuildingHubClient implements BuildingRegistryGateway {
     const timeoutMs = Number(
       this.config.get<string>('BUILDING_HUB_TIMEOUT_MS', '5000'),
     );
-    const url = new URL(endpoint, `${baseUrl.replace(/\/$/, '')}/`);
+    const url = new URL(
+      endpoint.replace(/^\/+/, ''),
+      `${baseUrl.replace(/\/$/, '')}/`,
+    );
     url.search = new URLSearchParams({
       serviceKey,
       sigunguCd: query.sigunguCd,

@@ -44,6 +44,16 @@ describe('BuildingHubClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.basis.map((item) => item.mgmBldrgstPk)).toEqual(['a', 'b']);
+    const firstRequest = fetchMock.mock.calls[0]?.[0];
+    if (!(firstRequest instanceof URL)) {
+      throw new Error(
+        'Expected the building hub request to use a URL instance.',
+      );
+    }
+
+    expect(firstRequest.pathname).toBe(
+      '/1613000/BldRgstHubService/getBrBasisOulnInfo',
+    );
   });
 
   it('rejects non-JSON responses', async () => {
