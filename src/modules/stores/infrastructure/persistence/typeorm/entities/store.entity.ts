@@ -3,6 +3,7 @@ import type { Point } from 'typeorm';
 
 @Entity({ name: 'store' })
 @Index('store_category_status_idx', ['businessCategoryCode', 'status'])
+@Index('store_service_category_idx', ['serviceBusinessCategoryCode'])
 export class Store {
   @PrimaryGeneratedColumn('identity', {
     type: 'bigint',
@@ -10,28 +11,61 @@ export class Store {
   })
   id: string;
 
-  @Column({ type: 'varchar', length: 100, name: 'source_store_id', unique: true })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    name: 'source_store_id',
+    unique: true,
+  })
   sourceStoreId: string;
 
   @Column({ type: 'varchar', length: 30, name: 'business_category_code' })
   businessCategoryCode: string;
 
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'service_business_category_code',
+    nullable: true,
+  })
+  serviceBusinessCategoryCode: string | null;
+
   @Column({ type: 'varchar', length: 100, name: 'business_category_name' })
   businessCategoryName: string;
 
-  @Column({ type: 'varchar', length: 30, name: 'business_subcategory_code', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'business_subcategory_code',
+    nullable: true,
+  })
   businessSubcategoryCode: string | null;
 
-  @Column({ type: 'varchar', length: 100, name: 'business_subcategory_name', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    name: 'business_subcategory_name',
+    nullable: true,
+  })
   businessSubcategoryName: string | null;
 
   @Column({ type: 'varchar', length: 200, name: 'store_name', nullable: true })
   storeName: string | null;
 
-  @Column({ type: 'varchar', length: 300, name: 'road_address', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 300,
+    name: 'road_address',
+    nullable: true,
+  })
   roadAddress: string | null;
 
-  @Column({ type: 'varchar', length: 20, name: 'legal_dong_code', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 20,
+    name: 'legal_dong_code',
+    nullable: true,
+  })
   legalDongCode: string | null;
 
   @Index('store_geom_gix', { spatial: true })

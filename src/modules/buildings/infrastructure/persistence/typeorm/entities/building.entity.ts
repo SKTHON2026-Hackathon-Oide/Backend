@@ -26,7 +26,7 @@ export class Building {
   sourceBuildingId: string;
 
   @Index('building_pnu_idx')
-  @Column({ type: 'varchar', length: 30, nullable: true, unique: true })
+  @Column({ type: 'varchar', length: 30, nullable: true })
   pnu: string | null;
 
   @Index('building_legal_dong_code_idx')

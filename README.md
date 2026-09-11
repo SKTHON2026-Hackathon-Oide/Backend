@@ -27,6 +27,20 @@ npm run migration:run
 npm run start:dev
 ```
 
+## Empty database preprocessing seed
+
+빈 PostGIS 데이터베이스를 원천 데이터부터 전처리 완료 상태까지 구성하려면
+`backend/.env`의 DB 접속 정보를 준비한 뒤 다음 명령을 실행한다.
+
+```bash
+./infra/databases/bootstrap/bootstrap-preprocessed.sh
+```
+
+이 명령은 TypeORM migration, 원천 staging/transform, 업종 정규화,
+건축물-상권 공간 조인, 경쟁도·수요도 계산 및 최종 검증을 순서대로 실행한다.
+자세한 변경 내역과 재실행 주의사항은
+[`docs/preprocessing-worklog.md`](docs/preprocessing-worklog.md)를 참고한다.
+
 `.env`의 `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE` 값은
 `infra/databases/.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`와
 동일해야 한다.

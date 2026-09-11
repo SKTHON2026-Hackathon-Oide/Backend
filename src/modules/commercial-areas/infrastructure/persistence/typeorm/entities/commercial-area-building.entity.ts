@@ -1,11 +1,5 @@
-import {
-  Column,
-  Entity,
-  JoinColumn,
-  ManyToOne,
-  PrimaryColumn,
-} from 'typeorm';
-import { GisBuilding } from '../../../../../buildings/infrastructure/persistence/typeorm/entities/gis-building.entity';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Building } from '../../../../../buildings/infrastructure/persistence/typeorm/entities/building.entity';
 import { CommercialArea } from './commercial-area.entity';
 
 @Entity({ name: 'commercial_area_building' })
@@ -17,14 +11,20 @@ export class CommercialAreaBuilding {
   @JoinColumn({ name: 'commercial_area_id' })
   commercialArea: CommercialArea;
 
-  @PrimaryColumn({ type: 'bigint', name: 'gis_building_id' })
-  gisBuildingId: string;
+  @PrimaryColumn({ type: 'bigint', name: 'building_id' })
+  buildingId: string;
 
-  @ManyToOne(() => GisBuilding, { nullable: false })
-  @JoinColumn({ name: 'gis_building_id' })
-  gisBuilding: GisBuilding;
+  @ManyToOne(() => Building, { nullable: false })
+  @JoinColumn({ name: 'building_id' })
+  building: Building;
 
-  @Column({ type: 'numeric', precision: 6, scale: 5, name: 'overlap_ratio', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 6,
+    scale: 5,
+    name: 'overlap_ratio',
+    nullable: true,
+  })
   overlapRatio: string | null;
 
   @Column({ type: 'timestamp', name: 'calculated_at', default: () => 'now()' })

@@ -16,6 +16,9 @@ services:
     volumes:
       - postgis_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
+      # Makes the repository's reproducible seed runner available when the
+      # host does not have a psql client installed.
+      - .:/opt/skthon/infra/databases:ro
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
