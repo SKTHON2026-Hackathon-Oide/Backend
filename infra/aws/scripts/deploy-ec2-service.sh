@@ -54,6 +54,9 @@ if [ "$SERVICE_KIND" = backend ]; then
   append_env ECS_TASK_SUBNET_IDS "$(parameter "$config_prefix/ecs-task-subnet-ids")"
   append_env ECS_TASK_SECURITY_GROUP_IDS "$(parameter "$config_prefix/ecs-task-security-group-ids")"
   append_env ECS_JOB_BUCKET "$(parameter "$config_prefix/jobs-bucket")"
+  append_env ECS_TASK_TIMEOUT_MS 300000
+  append_env ECS_RESULT_READ_ATTEMPTS 5
+  append_env ECS_RESULT_READ_DELAY_MS 750
   append_env RECOMMENDATION_MCP_SERVER_URL "$(parameter "$config_prefix/mcp-server-url")"
   docker run --rm --env-file "$runtime_env" "$IMAGE_URI" npm run migration:run:prod
   docker run -d --name "$SERVICE_NAME" --restart unless-stopped \

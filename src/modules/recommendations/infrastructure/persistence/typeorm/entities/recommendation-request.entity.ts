@@ -35,6 +35,45 @@ export class RecommendationRequest {
   @Column({ type: 'bigint', name: 'building_id', nullable: true })
   buildingId: string | null;
 
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'analysis_type',
+    default: 'SPACE_TO_BUSINESS',
+  })
+  analysisType: string;
+
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'business_category_code',
+    nullable: true,
+  })
+  businessCategoryCode: string | null;
+
+  @Column({
+    type: 'bigint',
+    name: 'preferred_administrative_area_id',
+    nullable: true,
+  })
+  preferredAdministrativeAreaId: string | null;
+
+  @Column('geometry', {
+    spatialFeatureType: 'Point',
+    srid: 5186,
+    name: 'input_location',
+    nullable: true,
+  })
+  inputLocation: object | null;
+
+  @Column({
+    type: 'varchar',
+    length: 128,
+    name: 'request_hash',
+    nullable: true,
+  })
+  requestHash: string | null;
+
   @Column({ type: 'text', name: 'natural_language_query', nullable: true })
   naturalLanguageQuery: string | null;
 

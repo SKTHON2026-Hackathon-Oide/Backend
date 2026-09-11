@@ -27,8 +27,6 @@
     "import:floating-population": "node -r ts-node/register -r tsconfig-paths/register src/database/importers/seoul-commercial-area-floating-population.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-ecs": "^3.1018.0",
-    "@aws-sdk/client-s3": "^3.1018.0",
     "@aws-sdk/client-ecs": "^3.1130.0",
     "@aws-sdk/client-s3": "^3.1130.0",
     "@clerk/backend": "^3.17.2",

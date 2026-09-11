@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -38,9 +39,13 @@ const LEASE_MINUTES = 2;
 const MAX_ATTEMPTS = 2;
 
 @Injectable()
-export class RecommendationOrchestratorService implements OnModuleInit {
+export class RecommendationOrchestratorService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly workerId = `${hostname()}-${randomUUID()}`;
   private readonly logger = new Logger(RecommendationOrchestratorService.name);
+  private recoveryTimer: NodeJS.Timeout | null = null;
+  private recoveryRunning = false;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -57,7 +62,12 @@ export class RecommendationOrchestratorService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    setImmediate(() => void this.resumePendingRequests());
+    setImmediate(() => this.runRecovery());
+    this.recoveryTimer = setInterval(() => this.runRecovery(), 30_000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
   }
 
   async create(
@@ -157,9 +167,11 @@ export class RecommendationOrchestratorService implements OnModuleInit {
 
   async process(requestId: string): Promise<void> {
     let claimed: { buildingId: string } | null = null;
+    let stopLeaseHeartbeat: (() => void) | null = null;
     try {
       claimed = await this.claim(requestId);
       if (!claimed) return;
+      stopLeaseHeartbeat = this.startLeaseHeartbeat(requestId);
 
       await this.publishProgress(
         requestId,
@@ -198,6 +210,7 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         buildingId: claimed.buildingId,
       });
       this.applyServerScores(output, packet);
+      this.applyServerSelectedCommercialArea(output, packet);
       this.attachCharts(output, packet);
 
       await this.publishProgress(
@@ -211,9 +224,11 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       this.canonicalizeOutput(output, packet);
       const result = this.toFinalResult(requestId, packet, output);
       await this.saveCompletedResult(requestId, packet, output, result);
-      await this.eventService.publish(requestId, 'completed', result);
+      await this.publishTerminalEventSafely(requestId, 'completed', result);
     } catch (error) {
       await this.fail(requestId, error);
+    } finally {
+      stopLeaseHeartbeat?.();
     }
   }
 
@@ -233,6 +248,20 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       [MAX_ATTEMPTS],
     );
     rows.forEach((row) => setImmediate(() => void this.process(row.id)));
+  }
+
+  private runRecovery(): void {
+    if (this.recoveryRunning) return;
+    this.recoveryRunning = true;
+    void this.resumePendingRequests()
+      .catch((error: unknown) =>
+        this.logger.error(
+          `Failed to recover pending recommendation requests: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+      .finally(() => {
+        this.recoveryRunning = false;
+      });
   }
 
   private async claim(
@@ -265,6 +294,26 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       throw error;
     }
     return { buildingId: row.building_id };
+  }
+
+  private startLeaseHeartbeat(requestId: string): () => void {
+    const timer = setInterval(() => {
+      void this.dataSource
+        .query(
+          `UPDATE recommendation_request
+           SET lease_expires_at = now() + ($3 || ' minutes')::interval,
+               updated_at = now()
+           WHERE id = $1 AND lease_owner = $2
+             AND status IN ('RESOLVING_LOCATION', 'COLLECTING_EVIDENCE', 'SCORING_WITH_AI', 'VALIDATING_RESULT')`,
+          [requestId, this.workerId, LEASE_MINUTES],
+        )
+        .catch((error: unknown) =>
+          this.logger.warn(
+            `Failed to renew lease for ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+    }, 30_000);
+    return () => clearInterval(timer);
   }
 
   private async collectEvidenceWithRetry(
@@ -445,6 +494,38 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       recommendation.totalScore =
         scores.get(recommendation.businessCategoryCode) ?? null;
     });
+  }
+
+  private applyServerSelectedCommercialArea(
+    output: RecommendationAgentOutput,
+    packet: RecommendationEvidencePacket,
+  ): void {
+    const area = packet.building.commercialAreas[0];
+    const authoritativeArea: RecommendationAgentOutput['selectedCommercialArea'] =
+      area
+        ? {
+            code: area.code,
+            name: area.name,
+            matchMethod: area.relation === 'DIRECT' ? 'OVERLAP' : 'NEAREST',
+            overlapRatio: area.overlapRatio,
+            distanceMeters: area.distanceMeters ?? null,
+          }
+        : {
+            code: null,
+            name: null,
+            matchMethod: null,
+            overlapRatio: null,
+            distanceMeters: null,
+          };
+    if (
+      JSON.stringify(output.selectedCommercialArea) !==
+      JSON.stringify(authoritativeArea)
+    ) {
+      this.logger.warn(
+        `Normalized AI-selected commercial area to server evidence for building ${packet.building.buildingId}.`,
+      );
+    }
+    output.selectedCommercialArea = authoritativeArea;
   }
 
   private toFinalResult(
@@ -875,7 +956,7 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       leaseOwner: null,
       leaseExpiresAt: null,
     });
-    await this.eventService.publish(requestId, 'failed', {
+    await this.publishTerminalEventSafely(requestId, 'failed', {
       code: normalized.code,
       message: normalized.message,
       retryable: normalized.retryable,
@@ -901,6 +982,20 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       progress,
       message,
     });
+  }
+
+  private async publishTerminalEventSafely(
+    requestId: string,
+    eventType: 'completed' | 'failed',
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.eventService.publish(requestId, eventType, payload);
+    } catch (error) {
+      this.logger.error(
+        `Recommendation request ${requestId} persisted as ${eventType}, but its SSE event could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async findOwned(
@@ -993,6 +1088,14 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         retryable: true,
       };
     }
+    if (error instanceof Error && error.name === 'AGENT_RESULT_NOT_AVAILABLE') {
+      return {
+        code: 'AGENT_RESULT_NOT_AVAILABLE',
+        message:
+          'AI 분석 작업은 종료됐지만 결과 저장 확인이 지연되고 있습니다. 다시 시도해 주세요.',
+        retryable: true,
+      };
+    }
     if (error instanceof Error && error.name === 'INVALID_MODEL_OUTPUT') {
       return {
         code: 'INVALID_MODEL_OUTPUT',
@@ -1019,7 +1122,12 @@ export class RecommendationOrchestratorService implements OnModuleInit {
   private isRetryableAgentError(error: unknown): boolean {
     return (
       error instanceof Error &&
-      ['MODEL_TIMEOUT', 'MCP_TIMEOUT'].includes(error.name)
+      [
+        'MODEL_TIMEOUT',
+        'MCP_TIMEOUT',
+        'CODEX_AGENT_RUNNER_ERROR',
+        'AGENT_RESULT_NOT_AVAILABLE',
+      ].includes(error.name)
     );
   }
 

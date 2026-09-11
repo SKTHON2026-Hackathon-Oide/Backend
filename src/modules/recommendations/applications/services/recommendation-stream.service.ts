@@ -1,4 +1,4 @@
-import { Injectable, MessageEvent } from '@nestjs/common';
+import { Injectable, Logger, MessageEvent } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Observable, Subscriber } from 'rxjs';
 import { Repository } from 'typeorm';
@@ -6,8 +6,12 @@ import { RecommendationEvent } from '../../infrastructure/persistence/typeorm/en
 import { RecommendationRequest } from '../../infrastructure/persistence/typeorm/entities/recommendation-request.entity';
 import { RecommendationEventService } from './recommendation-event.service';
 
+const DATABASE_POLL_INTERVAL_MS = 1_500;
+
 @Injectable()
 export class RecommendationStreamService {
+  private readonly logger = new Logger(RecommendationStreamService.name);
+
   constructor(
     @InjectRepository(RecommendationRequest)
     private readonly requestRepository: Repository<RecommendationRequest>,
@@ -17,6 +21,7 @@ export class RecommendationStreamService {
   stream(requestId: string, lastEventId = '0'): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let initialized = false;
+      let polling = false;
       let latestEventId = BigInt(lastEventId || '0');
       const buffered: RecommendationEvent[] = [];
       const removeListener = this.eventService.subscribe(requestId, (event) => {
@@ -36,9 +41,47 @@ export class RecommendationStreamService {
       const heartbeat = setInterval(() => {
         subscriber.next({
           type: 'heartbeat',
+          id: latestEventId.toString(),
           data: { requestId, serverTime: new Date().toISOString() },
         });
       }, 15_000);
+      const databasePoll = setInterval(() => {
+        if (!initialized || polling || subscriber.closed) return;
+        polling = true;
+        void (async () => {
+          try {
+            const events = await this.eventService.findAfter(
+              requestId,
+              latestEventId.toString(),
+            );
+            for (const event of events) {
+              this.emitEventIfNew(
+                subscriber,
+                event,
+                () => latestEventId,
+                (id) => {
+                  latestEventId = id;
+                },
+              );
+            }
+            if (subscriber.closed) return;
+            const current = await this.requestRepository.findOne({
+              where: { id: requestId },
+            });
+            this.emitTerminalSnapshotIfNeeded(
+              subscriber,
+              current,
+              latestEventId,
+            );
+          } catch (error) {
+            this.logger.warn(
+              `Recommendation stream database poll failed for ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          } finally {
+            polling = false;
+          }
+        })();
+      }, DATABASE_POLL_INTERVAL_MS);
 
       void (async () => {
         try {
@@ -47,7 +90,7 @@ export class RecommendationStreamService {
           });
           subscriber.next({
             type: 'connected',
-            id: '0',
+            id: latestEventId.toString(),
             data: {
               requestId,
               status: request?.status ?? 'UNKNOWN',
@@ -86,9 +129,7 @@ export class RecommendationStreamService {
               ),
             );
           buffered.length = 0;
-          if (this.isTerminalStatus(request?.status)) {
-            subscriber.complete();
-          }
+          this.emitTerminalSnapshotIfNeeded(subscriber, request, latestEventId);
         } catch (error) {
           subscriber.error(error);
         }
@@ -96,6 +137,7 @@ export class RecommendationStreamService {
 
       return () => {
         clearInterval(heartbeat);
+        clearInterval(databasePoll);
         removeListener();
       };
     });
@@ -103,6 +145,38 @@ export class RecommendationStreamService {
 
   private isTerminalStatus(status: string | undefined): boolean {
     return status === 'COMPLETED' || status === 'FAILED';
+  }
+
+  private emitTerminalSnapshotIfNeeded(
+    subscriber: Subscriber<MessageEvent>,
+    request: RecommendationRequest | null,
+    latestEventId: bigint,
+  ): void {
+    if (!request || subscriber.closed || !this.isTerminalStatus(request.status))
+      return;
+    if (request.status === 'COMPLETED') {
+      subscriber.next({
+        id: latestEventId.toString(),
+        type: 'completed',
+        data: request.result ?? {
+          requestId: request.id,
+          status: 'COMPLETED',
+          resultUrl: `/api/v1/recommendation-requests/${request.id}`,
+        },
+      });
+    } else {
+      subscriber.next({
+        id: latestEventId.toString(),
+        type: 'failed',
+        data: {
+          code: request.failureCode ?? 'RECOMMENDATION_ANALYSIS_FAILED',
+          message:
+            request.failureMessage ?? '추천 분석 중 오류가 발생했습니다.',
+          retryable: false,
+        },
+      });
+    }
+    subscriber.complete();
   }
 
   private emitEventIfNew(

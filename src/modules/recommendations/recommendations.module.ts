@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { AdministrativeAreasModule } from '../administrative-areas/administrative-areas.module';
 import { RECOMMENDATION_AGENT } from './domain/ports/recommendation-agent.port';
 import { DeterministicRecommendationAgent } from './infrastructure/agents/deterministic-recommendation-agent';
 import { CodexCliRecommendationAgent } from './infrastructure/agents/codex-cli-recommendation-agent';
@@ -16,18 +17,31 @@ import { RecommendationEventService } from './applications/services/recommendati
 import { RecommendationOrchestratorService } from './applications/services/recommendation-orchestrator.service';
 import { RecommendationStreamService } from './applications/services/recommendation-stream.service';
 import { RecommendationController } from './interfaces/http/recommendation.controller';
+import { BusinessLocationRecommendationController } from './interfaces/http/business-location-recommendation.controller';
+import { BusinessLocationRecommendationResult } from './infrastructure/persistence/typeorm/entities/business-location-recommendation-result.entity';
+import { SqlBusinessLocationEvidenceCollector } from './infrastructure/evidence/sql-business-location-evidence.collector';
+import { DeterministicBusinessLocationRecommendationAgent } from './infrastructure/agents/deterministic-business-location-recommendation-agent';
+import { OpenAiBusinessLocationRecommendationAgent } from './infrastructure/agents/openai-business-location-recommendation-agent';
+import { CodexBusinessLocationRecommendationAgent } from './infrastructure/agents/codex-business-location-recommendation-agent';
+import { EcsCodexBusinessLocationRecommendationAgent } from './infrastructure/agents/ecs-codex-business-location-recommendation-agent';
+import { BusinessLocationRecommendationOrchestratorService } from './applications/services/business-location-recommendation-orchestrator.service';
 
 @Module({
   imports: [
     AuthModule,
+    AdministrativeAreasModule,
     TypeOrmModule.forFeature([
       RecommendationRequest,
       RecommendationEvent,
       RecommendationEvidenceSnapshot,
       SpaceBusinessRecommendationResult,
+      BusinessLocationRecommendationResult,
     ]),
   ],
-  controllers: [RecommendationController],
+  controllers: [
+    RecommendationController,
+    BusinessLocationRecommendationController,
+  ],
   providers: [
     RecommendationEventService,
     RecommendationStreamService,
@@ -37,6 +51,12 @@ import { RecommendationController } from './interfaces/http/recommendation.contr
     CodexCliRecommendationAgent,
     EcsCodexRecommendationAgent,
     OpenAiResponsesRecommendationAgent,
+    SqlBusinessLocationEvidenceCollector,
+    DeterministicBusinessLocationRecommendationAgent,
+    OpenAiBusinessLocationRecommendationAgent,
+    CodexBusinessLocationRecommendationAgent,
+    EcsCodexBusinessLocationRecommendationAgent,
+    BusinessLocationRecommendationOrchestratorService,
     {
       provide: RECOMMENDATION_AGENT,
       inject: [

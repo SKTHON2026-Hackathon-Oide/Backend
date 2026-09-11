@@ -1,5 +1,8 @@
 # SKTHON Backend
 
+업종·선호지역·영업시간 기반 상권 추천의 프론트엔드 연동 계약은
+[`docs/business-location-recommendation-frontend-prompt.md`](docs/business-location-recommendation-frontend-prompt.md)를 참고한다.
+
 SKTHON 백엔드는 NestJS 기반 모듈러 모놀리스이며, 각 도메인 모듈에 StockForge의 헥사고날 아키텍처 구조를 적용한다.
 
 ## Requirements

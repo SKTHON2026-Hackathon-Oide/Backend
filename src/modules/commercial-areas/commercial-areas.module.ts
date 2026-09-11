@@ -7,6 +7,7 @@ import { CommercialArea } from './infrastructure/persistence/typeorm/entities/co
 import { CommercialAreaBuilding } from './infrastructure/persistence/typeorm/entities/commercial-area-building.entity';
 import { CommercialAreaFeature } from './infrastructure/persistence/typeorm/entities/commercial-area-feature.entity';
 import { LandUseZone } from './infrastructure/persistence/typeorm/entities/land-use-zone.entity';
+import { BusinessCategoryController } from './interfaces/http/business-category.controller';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { LandUseZone } from './infrastructure/persistence/typeorm/entities/land-
       BusinessCategoryAnalysisProfile,
     ]),
   ],
+  controllers: [BusinessCategoryController],
   exports: [TypeOrmModule],
 })
 export class CommercialAreasModule {}

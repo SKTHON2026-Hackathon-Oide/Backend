@@ -37,7 +37,13 @@ fi
 
 codex mcp add location-recommendation --url "$MCP_SERVER_URL" >/dev/null
 
-prompt_file=/opt/recommendation-system-prompt.md
+if [ "${RECOMMENDATION_ANALYSIS_MODE:-}" = "business-location" ]; then
+  prompt_file=/opt/business-location-recommendation-system-prompt.md
+  schema_file=/opt/business-location-recommendation-output.schema.json
+else
+  prompt_file=/opt/recommendation-system-prompt.md
+  schema_file=/opt/recommendation-output.schema.json
+fi
 if [ ! -s "$prompt_file" ]; then
   echo "Recommendation system prompt is missing: $prompt_file" >&2
   exit 68
@@ -49,7 +55,7 @@ if ! timeout --signal=TERM --kill-after=5s 105s codex exec \
   --sandbox danger-full-access \
   --skip-git-repo-check \
   --model "${CODEX_MODEL:-gpt-5.6-luna}" \
-  --output-schema /opt/recommendation-output.schema.json \
+  --output-schema "$schema_file" \
   --output-last-message /tmp/final.json \
   "$(cat /tmp/prompt.txt)" \
   >/tmp/codex.log 2>&1; then
@@ -63,13 +69,20 @@ if [ ! -s /tmp/final.json ] || [ -z "$(tr -d '[:space:]' < /tmp/final.json)" ]; 
   exit 1
 fi
 
+if [ -n "${OUTPUT_S3_URI:-}" ]; then
+  upload_attempt=1
+  while ! aws s3 cp /tmp/final.json "$OUTPUT_S3_URI"; do
+    if [ "$upload_attempt" -ge 3 ]; then
+      echo "Failed to upload recommendation output to S3 after 3 attempts." >&2
+      exit 67
+    fi
+    upload_attempt=$((upload_attempt + 1))
+    sleep "$upload_attempt"
+  done
+fi
+
+# Emit the completion marker only after the result is durably available to the
+# backend. This keeps CloudWatch logs from reporting completion before S3 upload.
 printf '%s\n' '__CODEX_RECOMMENDATION_OUTPUT_BEGIN__'
 cat /tmp/final.json
 printf '%s\n' '__CODEX_RECOMMENDATION_OUTPUT_END__'
-
-if [ -n "${OUTPUT_S3_URI:-}" ]; then
-  if ! aws s3 cp /tmp/final.json "$OUTPUT_S3_URI"; then
-    echo "Failed to upload recommendation output to S3." >&2
-    exit 67
-  fi
-fi

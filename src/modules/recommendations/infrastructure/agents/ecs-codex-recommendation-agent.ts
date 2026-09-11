@@ -16,6 +16,10 @@ import type {
   RecommendationAgentContext,
   RecommendationAgentPort,
 } from '../../domain/ports/recommendation-agent.port';
+import type {
+  BusinessLocationEvidencePacket,
+  BusinessLocationRecommendationOutput,
+} from '../../domain/business-location-recommendation.types';
 import {
   RecommendationAgentOutput,
   RecommendationEvidencePacket,
@@ -42,6 +46,33 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
     if (!context)
       throw this.configurationError('Recommendation context is required.');
 
+    return this.runJob<RecommendationAgentOutput>(
+      context.requestId,
+      {
+        analysisContext: this.toAnalysisContext(packet, context),
+      },
+      null,
+    );
+  }
+
+  generateBusinessLocation(
+    packet: BusinessLocationEvidencePacket,
+  ): Promise<BusinessLocationRecommendationOutput> {
+    return this.runJob<BusinessLocationRecommendationOutput>(
+      packet.input.requestId,
+      {
+        analysisMode: 'BUSINESS_TO_AREA',
+        analysisContext: packet.input,
+      },
+      'business-location',
+    );
+  }
+
+  private async runJob<T>(
+    requestId: string,
+    input: Record<string, unknown>,
+    analysisMode: string | null,
+  ): Promise<T> {
     const cluster = this.required('ECS_CLUSTER');
     const taskDefinition = this.required('ECS_TASK_DEFINITION_ARN');
     const bucket = this.required('ECS_JOB_BUCKET');
@@ -54,19 +85,19 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
       );
     }
 
-    const jobId = `${context.requestId}-${randomUUID()}`;
+    const jobId = `${requestId}-${randomUUID()}`;
     const inputKey = `jobs/${jobId}/input.json`;
     const outputKey = `jobs/${jobId}/output.json`;
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: inputKey,
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256',
-        Body: JSON.stringify({
-          analysisContext: this.toAnalysisContext(packet, context),
+    await this.withRetry(() =>
+      this.s3.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: inputKey,
+          ContentType: 'application/json',
+          ServerSideEncryption: 'AES256',
+          Body: JSON.stringify(input),
         }),
-      }),
+      ),
     );
 
     const taskResult = await this.ecs.send(
@@ -74,7 +105,7 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
         cluster,
         taskDefinition,
         launchType: 'FARGATE',
-        startedBy: `skthon-${context.requestId}`.slice(0, 36),
+        startedBy: `skthon-${requestId}`.slice(0, 36),
         networkConfiguration: {
           awsvpcConfiguration: {
             assignPublicIp: 'ENABLED',
@@ -93,6 +124,14 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
                 { name: 'INPUT_S3_URI', value: `s3://${bucket}/${inputKey}` },
                 { name: 'OUTPUT_S3_URI', value: `s3://${bucket}/${outputKey}` },
                 { name: 'MCP_SERVER_URL', value: mcpServerUrl },
+                ...(analysisMode
+                  ? [
+                      {
+                        name: 'RECOMMENDATION_ANALYSIS_MODE',
+                        value: analysisMode,
+                      },
+                    ]
+                  : []),
               ],
             },
           ],
@@ -106,18 +145,16 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
         failure?.reason ?? 'ECS task could not be started.',
       );
     }
-    this.logger.log(
-      `Started ECS Codex task ${taskArn} for ${context.requestId}.`,
-    );
+    this.logger.log(`Started ECS Codex task ${taskArn} for ${requestId}.`);
 
     const timeoutMs = Number(
-      this.config.get<string>('ECS_TASK_TIMEOUT_MS', '180000'),
+      this.config.get<string>('ECS_TASK_TIMEOUT_MS', '300000'),
     );
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       await this.sleep(POLL_INTERVAL_MS);
-      const described = await this.ecs.send(
-        new DescribeTasksCommand({ cluster, tasks: [taskArn] }),
+      const described = await this.withRetry(() =>
+        this.ecs.send(new DescribeTasksCommand({ cluster, tasks: [taskArn] })),
       );
       const task = described.tasks?.[0];
       if (task?.lastStatus !== 'STOPPED') continue;
@@ -126,39 +163,94 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
           entry.name ===
           this.config.get<string>('ECS_TASK_CONTAINER_NAME', 'codex-agent'),
       );
-      if (container?.exitCode !== 0) {
+      if (!container) {
+        throw this.runnerError('Codex task container state was not returned.');
+      }
+      if (container.exitCode !== 0) {
         throw this.runnerError(
-          container?.reason ?? task.stoppedReason ?? 'Codex task failed.',
+          container.reason ?? task.stoppedReason ?? 'Codex task failed.',
         );
       }
-      return this.readOutput(bucket, outputKey);
+      return this.readOutput<T>(bucket, outputKey);
     }
 
-    await this.ecs.send(
-      new StopTaskCommand({ cluster, task: taskArn, reason: 'Timed out' }),
-    );
+    try {
+      return await this.readOutput<T>(bucket, outputKey, 2);
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.name !== 'AGENT_RESULT_NOT_AVAILABLE'
+      ) {
+        throw error;
+      }
+    }
+    await this.ecs
+      .send(
+        new StopTaskCommand({ cluster, task: taskArn, reason: 'Timed out' }),
+      )
+      .catch((error: unknown) =>
+        this.logger.warn(
+          `Failed to stop timed-out ECS task ${taskArn}: ${this.errorMessage(error)}`,
+        ),
+      );
     const timeoutError = new Error('Codex agent 호출 시간이 초과되었습니다.');
     timeoutError.name = 'MODEL_TIMEOUT';
     throw timeoutError;
   }
 
-  private async readOutput(
+  private async readOutput<T>(
     bucket: string,
     key: string,
-  ): Promise<RecommendationAgentOutput> {
-    const response = await this.s3.send(
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-    );
-    const body = await response.Body?.transformToString();
-    if (!body)
-      throw this.runnerError('Codex task finished without an output artifact.');
-    try {
-      return JSON.parse(body) as RecommendationAgentOutput;
-    } catch {
-      const error = new Error('Codex agent의 JSON 출력이 올바르지 않습니다.');
-      error.name = 'INVALID_MODEL_OUTPUT';
-      throw error;
+    attempts = Number(this.config.get<string>('ECS_RESULT_READ_ATTEMPTS', '5')),
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await this.s3.send(
+          new GetObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        const body = await response.Body?.transformToString();
+        if (!body) throw new Error('Empty output artifact.');
+        try {
+          return JSON.parse(body) as T;
+        } catch {
+          const error = new Error(
+            'Codex agent의 JSON 출력이 올바르지 않습니다.',
+          );
+          error.name = 'INVALID_MODEL_OUTPUT';
+          throw error;
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'INVALID_MODEL_OUTPUT') {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < attempts) {
+          await this.sleep(
+            Number(this.config.get<string>('ECS_RESULT_READ_DELAY_MS', '750')) *
+              attempt,
+          );
+        }
+      }
     }
+    const error = new Error(
+      `Codex task output artifact is not available: ${this.errorMessage(lastError)}`,
+    );
+    error.name = 'AGENT_RESULT_NOT_AVAILABLE';
+    throw error;
+  }
+
+  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) await this.sleep(POLL_INTERVAL_MS / 2);
+      }
+    }
+    throw lastError;
   }
 
   private toAnalysisContext(
@@ -221,6 +313,10 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
     const error = new Error(message);
     error.name = 'CODEX_AGENT_RUNNER_ERROR';
     return error;
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private sleep(ms: number): Promise<void> {
