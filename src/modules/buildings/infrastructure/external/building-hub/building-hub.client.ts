@@ -5,6 +5,7 @@ import {
   BuildingHubAreaRecord,
   BuildingHubBasisRecord,
   BuildingHubFloorRecord,
+  BuildingHubHousingPriceRecord,
   BuildingHubQuery,
   BuildingRegistryGateway,
   BuildingRegistryRawData,
@@ -31,20 +32,26 @@ export class BuildingHubClient implements BuildingRegistryGateway {
     }
     const normalizedServiceKey = this.normalizeServiceKey(serviceKey);
 
-    const [basisPage, floorPage, areaPage] = await Promise.all([
-      this.fetchAll('getBrBasisOulnInfo', normalizedServiceKey, query),
-      this.fetchAll('getBrFlrOulnInfo', normalizedServiceKey, query),
-      this.fetchAll('getBrExposPubuseAreaInfo', normalizedServiceKey, query),
-    ]);
+    const [basisPage, floorPage, areaPage, housingPricePage] =
+      await Promise.all([
+        this.fetchAll('getBrBasisOulnInfo', normalizedServiceKey, query),
+        this.fetchAll('getBrFlrOulnInfo', normalizedServiceKey, query),
+        this.fetchAll('getBrExposPubuseAreaInfo', normalizedServiceKey, query),
+        this.fetchAll('getBrHsprcInfo', normalizedServiceKey, query),
+      ]);
 
     return {
       basis: basisPage.items.map((item) => this.mapBasis(item)),
       floors: floorPage.items.map((item) => this.mapFloor(item)),
       areas: areaPage.items.map((item) => this.mapArea(item)),
+      housingPrices: housingPricePage.items.map((item) =>
+        this.mapHousingPrice(item),
+      ),
       rawResponse: {
         basis: basisPage.raw,
         floors: floorPage.raw,
         areas: areaPage.raw,
+        housingPrices: housingPricePage.raw,
       },
     };
   }
@@ -282,6 +289,16 @@ export class BuildingHubClient implements BuildingRegistryGateway {
       areaKind,
       registeredUseCode: this.string(item.mainPurpsCd),
       registeredUseName: this.string(item.mainPurpsCdNm),
+    };
+  }
+
+  private mapHousingPrice(
+    item: Record<string, unknown>,
+  ): BuildingHubHousingPriceRecord {
+    return {
+      mgmBldrgstPk: this.string(item.mgmBldrgstPk),
+      housingPrice: this.number(item.hsprc),
+      sourceCreatedAt: this.string(item.crtnDay),
     };
   }
 

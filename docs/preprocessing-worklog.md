@@ -11,17 +11,17 @@
 
 ## 현재 적재 데이터 기준
 
-| 테이블 | 기준 건수 |
-| --- | ---: |
-| `administrative_area` | 492 |
-| `building` | 695,754 |
-| `commercial_area` | 1,650 |
-| `store` | 554,092 |
-| `sales_statistic` | 85,732 |
-| `commercial_area_floating_population_statistic` | 9,892 |
-| `area_business_feature` | 304,775 |
-| `land_use_zone` | 17 |
-| `commercial_area_building` | 0 (작업 전) |
+| 테이블                                          |   기준 건수 |
+| ----------------------------------------------- | ----------: |
+| `administrative_area`                           |         492 |
+| `building`                                      |     695,754 |
+| `commercial_area`                               |       1,650 |
+| `store`                                         |     554,092 |
+| `sales_statistic`                               |      85,732 |
+| `commercial_area_floating_population_statistic` |       9,892 |
+| `area_business_feature`                         |     304,775 |
+| `land_use_zone`                                 |          17 |
+| `commercial_area_building`                      | 0 (작업 전) |
 
 `commercial_area_feature`는 유동인구·임대료의 가공 피처 테이블이므로 빈 상태를
 정상으로 간주한다. 원천 유동인구는
@@ -32,14 +32,14 @@
 2026-09-11 현재 개발 DB와 별도 빈 테스트 DB에서 동일한 부트스트랩을 실행했고,
 최종 검증을 통과했다.
 
-| 결과 | 건수 |
-| --- | ---: |
-| `business_category` | 100 |
-| `store_category_mapping` | 247 |
-| 정규화된 상가 | 96,001 |
+| 결과                            |    건수 |
+| ------------------------------- | ------: |
+| `business_category`             |     100 |
+| `store_category_mapping`        |     247 |
+| 정규화된 상가                   |  96,001 |
 | `commercial_area_building` 연결 | 440,714 |
-| 경쟁도 계산 | 304,775 |
-| 수요도 계산 | 84,696 |
+| 경쟁도 계산                     | 304,775 |
+| 수요도 계산                     |  84,696 |
 
 공간 연결의 고아 참조와 점수 범위 오류는 0건이며, `stg_*` 테이블도 남아 있지
 않다. TypeORM 마이그레이션 10개가 모두 적용되었고 `npm run build`와 변경 파일
@@ -247,8 +247,9 @@ fixture로 실제 공간 쿼리 및 `building_geom_gix` 실행 계획을 추가 
 2026-09-11에 2단계(건축HUB 어댑터)도 구현했다.
 
 - `PnuBuildingHubQueryFactory`가 19자리 PNU를 `sigunguCd`, `bjdongCd`,
-  `platGbCd`, `bun`, `ji`로 엄격히 변환한다.
-- 세 건축HUB endpoint를 페이지 단위로 모두 조회하고, 네트워크 오류·timeout과
+  `platGbCd`, `bun`, `ji`로 엄격히 변환한다. PNU 토지구분은 건축HUB 코드에 맞춰
+  `1→0`(일반 대지), `2→1`(산), `3→2`(블록)로 변환한다.
+- 기본개요·층별개요·전유공용면적·주택가격 네 건축HUB endpoint를 페이지 단위로 모두 조회하고, 네트워크 오류·timeout과
   5xx만 최대 2회 재시도한다. XML/비정상 JSON과 인증·응답 오류는 명시적 오류로
   처리한다.
 - `mgmBldrgstPk`별 대장 건물을 그룹화하고 주소·건물명·용도·층수·연면적을
@@ -257,8 +258,8 @@ fixture로 실제 공간 쿼리 및 `building_geom_gix` 실행 계획을 추가 
   반환한다. 층별 면적은 전유면적으로 변환하지 않는다.
 - `building_registry_cache`에 정규화 옵션과 원본 응답을 보관하고 30일(결과 없음은
   1일) 캐시, 만료 캐시 장애 fallback을 지원한다.
-- 건물 선택 API는 이제 건축HUB 조회 결과를 `registryStatus`, `spaceOptions`,
-  `manualInputAllowed`, `isStale`로 함께 반환하며, 외부 조회 실패 시 수동 입력으로
+- 건물 선택 API는 이제 건축HUB 조회 결과를 `registryStatus`, `housingPrice`,
+  `spaceOptions`, `manualInputAllowed`, `isStale`로 함께 반환하며, 외부 조회 실패 시 수동 입력으로
   이어질 수 있다.
 
 실제 서비스 키와 PostgreSQL이 없는 환경에서도 PNU·매칭·면적 grouping 및 외부

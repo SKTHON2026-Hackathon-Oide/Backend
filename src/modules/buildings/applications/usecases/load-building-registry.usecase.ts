@@ -22,7 +22,7 @@ import { BuildingRegistryResult } from '../results/building-registry.result';
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
 import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
-const CACHE_VERSION = 'building-hub-v2';
+const CACHE_VERSION = 'building-hub-v3';
 const CACHE_TTL_DAYS = 30;
 const NOT_FOUND_TTL_DAYS = 1;
 
@@ -118,6 +118,7 @@ export class LoadBuildingRegistryUseCase {
         registryStatus: BuildingRegistryStatus.REGISTRY_NOT_FOUND,
         ledgerMatch: null,
         ambiguousCandidates: [],
+        housingPrice: null,
         spaceOptions: [],
         manualInputAllowed: true,
         isStale: false,
@@ -133,6 +134,7 @@ export class LoadBuildingRegistryUseCase {
           BuildingRegistryStatus.REGISTRY_BUILDING_SELECTION_REQUIRED,
         ledgerMatch: null,
         ambiguousCandidates: match.candidates,
+        housingPrice: null,
         spaceOptions: [],
         manualInputAllowed: true,
         isStale: false,
@@ -146,6 +148,7 @@ export class LoadBuildingRegistryUseCase {
         registryStatus: BuildingRegistryStatus.BUILDING_ONLY,
         ledgerMatch: null,
         ambiguousCandidates: [],
+        housingPrice: null,
         spaceOptions: [],
         manualInputAllowed: true,
         isStale: false,
@@ -177,6 +180,7 @@ export class LoadBuildingRegistryUseCase {
               registryKeys.has(record.mgmBldrgstPk),
           );
     const spaceOptions = this.optionService.create(areas, floors);
+    const housingPrice = this.housingPriceFor(raw.housingPrices, registryKeys);
     const registryStatus = spaceOptions.some(
       (option) => option.exclusiveAreaSqm !== null,
     )
@@ -198,6 +202,7 @@ export class LoadBuildingRegistryUseCase {
         sourceAsOf,
       },
       ambiguousCandidates: [],
+      housingPrice,
       spaceOptions,
       manualInputAllowed: true,
       isStale: false,
@@ -213,7 +218,12 @@ export class LoadBuildingRegistryUseCase {
     >,
     requestFingerprint: string,
     result: BuildingRegistryResult,
-    rawResponse: { basis: unknown; floors: unknown; areas: unknown },
+    rawResponse: {
+      basis: unknown;
+      floors: unknown;
+      areas: unknown;
+      housingPrices: unknown;
+    },
     now: Date,
     existingCache: BuildingRegistryCache | null,
   ): Promise<BuildingRegistryCache> {
@@ -252,6 +262,7 @@ export class LoadBuildingRegistryUseCase {
       registryStatus: BuildingRegistryStatus.REGISTRY_UNAVAILABLE,
       ledgerMatch: null,
       ambiguousCandidates: [],
+      housingPrice: null,
       spaceOptions: [],
       manualInputAllowed: true,
       isStale: false,
@@ -264,5 +275,31 @@ export class LoadBuildingRegistryUseCase {
     return error instanceof BuildingHubClientError
       ? error.code
       : 'REGISTRY_UNAVAILABLE';
+  }
+
+  private housingPriceFor(
+    records: Awaited<
+      ReturnType<BuildingRegistryGateway['fetchByParcel']>
+    >['housingPrices'],
+    registryKeys: Set<string>,
+  ): BuildingRegistryResult['housingPrice'] {
+    const candidates = records
+      .filter(
+        (record) =>
+          record.housingPrice !== null &&
+          (registryKeys.size === 0 ||
+            record.mgmBldrgstPk === null ||
+            registryKeys.has(record.mgmBldrgstPk)),
+      )
+      .sort((left, right) =>
+        (right.sourceCreatedAt ?? '').localeCompare(left.sourceCreatedAt ?? ''),
+      );
+    const latest = candidates[0];
+    return latest
+      ? {
+          amount: latest.housingPrice as number,
+          sourceAsOf: latest.sourceCreatedAt,
+        }
+      : null;
   }
 }

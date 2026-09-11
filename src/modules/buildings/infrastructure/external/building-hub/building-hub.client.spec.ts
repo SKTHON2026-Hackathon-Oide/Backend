@@ -31,6 +31,12 @@ describe('BuildingHubClient', () => {
       .mockResolvedValueOnce(response([], 0))
       .mockResolvedValueOnce(response([], 0))
       .mockResolvedValueOnce(
+        response(
+          [{ mgmBldrgstPk: 'a', hsprc: '450000000', crtnDay: '20260101' }],
+          1,
+        ),
+      )
+      .mockResolvedValueOnce(
         response([{ mgmBldrgstPk: 'b', bldNm: '별관', platPlc: '서울' }], 2),
       );
     const client = new BuildingHubClient(
@@ -42,8 +48,15 @@ describe('BuildingHubClient', () => {
 
     const result = await client.fetchByParcel(query);
 
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(result.basis.map((item) => item.mgmBldrgstPk)).toEqual(['a', 'b']);
+    expect(result.housingPrices).toEqual([
+      {
+        mgmBldrgstPk: 'a',
+        housingPrice: 450000000,
+        sourceCreatedAt: '20260101',
+      },
+    ]);
     const firstRequest = fetchMock.mock.calls[0]?.[0];
     if (!(firstRequest instanceof URL)) {
       throw new Error(
@@ -55,6 +68,13 @@ describe('BuildingHubClient', () => {
       '/1613000/BldRgstHubService/getBrBasisOulnInfo',
     );
     expect(firstRequest.searchParams.get('serviceKey')).toBe('test+key=');
+    const requestedPaths = fetchMock.mock.calls.map((call) => {
+      const request = call[0];
+      return request instanceof URL ? request.pathname : null;
+    });
+    expect(requestedPaths).toContain(
+      '/1613000/BldRgstHubService/getBrHsprcInfo',
+    );
   });
 
   it('classifies data.go.kr service-key errors without hiding them as HTTP errors', async () => {

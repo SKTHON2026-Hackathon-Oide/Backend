@@ -42,14 +42,22 @@ export interface BuildingHubAreaRecord {
   registeredUseName: string | null;
 }
 
+export interface BuildingHubHousingPriceRecord {
+  mgmBldrgstPk: string | null;
+  housingPrice: number | null;
+  sourceCreatedAt: string | null;
+}
+
 export interface BuildingRegistryRawData {
   basis: BuildingHubBasisRecord[];
   floors: BuildingHubFloorRecord[];
   areas: BuildingHubAreaRecord[];
+  housingPrices: BuildingHubHousingPriceRecord[];
   rawResponse: {
     basis: unknown;
     floors: unknown;
     areas: unknown;
+    housingPrices: unknown;
   };
 }
 

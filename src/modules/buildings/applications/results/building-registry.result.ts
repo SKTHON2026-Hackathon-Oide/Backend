@@ -11,6 +11,10 @@ export interface BuildingRegistryResult {
     sourceAsOf: string | null;
   } | null;
   ambiguousCandidates: LedgerMatchCandidate[];
+  housingPrice: {
+    amount: number;
+    sourceAsOf: string | null;
+  } | null;
   spaceOptions: RegistrySpaceOption[];
   manualInputAllowed: boolean;
   isStale: boolean;

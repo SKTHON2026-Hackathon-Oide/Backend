@@ -232,6 +232,10 @@ PUT /api/v1/space-analysis-contexts/{contextId}/building
     "confidence": 0.94,
     "sourceAsOf": "20260911"
   },
+  "housingPrice": {
+    "amount": 450000000,
+    "sourceAsOf": "20260101"
+  },
   "spaceOptions": [
     {
       "optionId": "server-generated-opaque-id",
@@ -390,13 +394,13 @@ _type=json, numOfRows, pageNo
 
 필지 결과를 `mgmBldrgstPk` 기준으로 그룹화하고 다음 신호를 점수화한다.
 
-| 신호 | 초기 가중치 |
-|---|---:|
-| 정규화 지번주소 일치 | 40 |
-| 정규화 건물명/동명칭 일치 | 25 |
-| 주용도 일치 또는 호환 | 15 |
-| 지상·지하층수 유사 | 10 |
-| 연면적 유사 | 10 |
+| 신호                      | 초기 가중치 |
+| ------------------------- | ----------: |
+| 정규화 지번주소 일치      |          40 |
+| 정규화 건물명/동명칭 일치 |          25 |
+| 주용도 일치 또는 호환     |          15 |
+| 지상·지하층수 유사        |          10 |
+| 연면적 유사               |          10 |
 
 - 단일 후보면 자동 선택할 수 있지만 매칭 근거는 저장한다.
 - 최고 점수가 기준 미만이거나 1·2위 차이가 작으면 사용자 선택을 요구한다.
@@ -716,21 +720,21 @@ HTTP DTO, 외부 API DTO, MCP 입력 스키마와 AI 출력 스키마를 하나�
 
 ## 9. 오류 코드
 
-| 코드 | 의미 | 사용자 흐름 |
-|---|---|---|
-| `INVALID_COORDINATE` | 좌표 형식/범위 오류 | 핀 재선택 |
-| `OUT_OF_SERVICE_AREA` | 서울 서비스 범위 밖 | 안내 후 중단 |
-| `NO_BUILDING_NEAR_POINT` | 10m 이내 건물 없음 | 핀 재선택 |
-| `BUILDING_NOT_IN_CONTEXT` | 최초 후보가 아닌 건물 선택 | 후보 다시 조회 |
-| `PNU_UNAVAILABLE` | 외부 조회 키 부족 | 수동 정보 또는 위치 분석 |
-| `REGISTRY_NOT_FOUND` | 대장 결과 없음 | 수동 정보 또는 위치 분석 |
-| `REGISTRY_MATCH_AMBIGUOUS` | 필지 내 대장 건물 모호 | 대장 건물 선택 |
-| `REGISTRY_TIMEOUT` | 건축HUB timeout | 캐시 또는 수동 입력 |
-| `REGISTRY_RATE_LIMITED` | 호출량 초과 | 캐시 또는 위치 분석 |
-| `SPACE_OPTION_EXPIRED` | 선택 옵션 캐시 만료 | 옵션 재조회 |
-| `INVALID_SPACE_DETAIL` | 층/면적/금액 검증 실패 | 입력 수정 |
-| `MCP_EVIDENCE_UNAVAILABLE` | 근거 조회 실패 | 재시도 가능 실패 |
-| `AI_OUTPUT_INVALID` | AI JSON/후보 검증 실패 | 1회 재생성 후 실패 |
+| 코드                       | 의미                       | 사용자 흐름              |
+| -------------------------- | -------------------------- | ------------------------ |
+| `INVALID_COORDINATE`       | 좌표 형식/범위 오류        | 핀 재선택                |
+| `OUT_OF_SERVICE_AREA`      | 서울 서비스 범위 밖        | 안내 후 중단             |
+| `NO_BUILDING_NEAR_POINT`   | 10m 이내 건물 없음         | 핀 재선택                |
+| `BUILDING_NOT_IN_CONTEXT`  | 최초 후보가 아닌 건물 선택 | 후보 다시 조회           |
+| `PNU_UNAVAILABLE`          | 외부 조회 키 부족          | 수동 정보 또는 위치 분석 |
+| `REGISTRY_NOT_FOUND`       | 대장 결과 없음             | 수동 정보 또는 위치 분석 |
+| `REGISTRY_MATCH_AMBIGUOUS` | 필지 내 대장 건물 모호     | 대장 건물 선택           |
+| `REGISTRY_TIMEOUT`         | 건축HUB timeout            | 캐시 또는 수동 입력      |
+| `REGISTRY_RATE_LIMITED`    | 호출량 초과                | 캐시 또는 위치 분석      |
+| `SPACE_OPTION_EXPIRED`     | 선택 옵션 캐시 만료        | 옵션 재조회              |
+| `INVALID_SPACE_DETAIL`     | 층/면적/금액 검증 실패     | 입력 수정                |
+| `MCP_EVIDENCE_UNAVAILABLE` | 근거 조회 실패             | 재시도 가능 실패         |
+| `AI_OUTPUT_INVALID`        | AI JSON/후보 검증 실패     | 1회 재생성 후 실패       |
 
 외부 API 결과 없음은 전체 기능 실패가 아니다. 사용자가 `LOCATION_ONLY`로 분석을
 계속할 수 있도록 응답한다.
