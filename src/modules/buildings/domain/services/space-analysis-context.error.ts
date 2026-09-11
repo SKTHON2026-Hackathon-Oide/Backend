@@ -1,5 +1,6 @@
 export type SpaceAnalysisErrorCode =
   | 'INVALID_COORDINATE'
+  | 'AUTHENTICATED_USER_NOT_FOUND'
   | 'OUT_OF_SERVICE_AREA'
   | 'NO_BUILDING_NEAR_POINT'
   | 'CONTEXT_NOT_FOUND'
@@ -11,6 +12,7 @@ export type SpaceAnalysisErrorCode =
 
 const HTTP_STATUS_BY_CODE: Record<SpaceAnalysisErrorCode, number> = {
   INVALID_COORDINATE: 400,
+  AUTHENTICATED_USER_NOT_FOUND: 401,
   OUT_OF_SERVICE_AREA: 422,
   NO_BUILDING_NEAR_POINT: 404,
   CONTEXT_NOT_FOUND: 404,

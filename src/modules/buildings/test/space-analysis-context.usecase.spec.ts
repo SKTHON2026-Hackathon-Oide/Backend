@@ -8,6 +8,7 @@ import { SpaceAnalysisContextRepository } from '../domain/ports/space-analysis-c
 import { SpaceAnalysisContext } from '../infrastructure/persistence/typeorm/entities/space-analysis-context.entity';
 import { SpaceAnalysisContextStatus } from '../domain/enums/space-analysis-context-status.enum';
 import { SpaceAnalysisContextError } from '../domain/services/space-analysis-context.error';
+import { UserPresencePort } from '../../auth/domain/ports/user-presence.port';
 
 const candidate = (buildingId: string): BuildingCandidate => ({
   buildingId,
@@ -57,17 +58,28 @@ class FakeContextRepository implements SpaceAnalysisContextRepository {
   }
 }
 
+class FakeUserPresence implements UserPresencePort {
+  exists = true;
+
+  existsActiveUser(): Promise<boolean> {
+    return Promise.resolve(this.exists);
+  }
+}
+
 describe('space analysis context use cases', () => {
   let buildingSearch: FakeBuildingSearch;
   let contexts: FakeContextRepository;
+  let users: FakeUserPresence;
   let createContext: CreateSpaceAnalysisContextUseCase;
 
   beforeEach(() => {
     buildingSearch = new FakeBuildingSearch();
     contexts = new FakeContextRepository();
+    users = new FakeUserPresence();
     createContext = new CreateSpaceAnalysisContextUseCase(
       buildingSearch,
       contexts,
+      users,
     );
   });
 
@@ -90,6 +102,21 @@ describe('space analysis context use cases', () => {
     await expect(
       createContext.execute({ userId: '7', longitude: 181, latitude: 37 }),
     ).rejects.toMatchObject({ code: 'INVALID_COORDINATE' });
+  });
+
+  it('returns a client-safe error when the authenticated user is absent', async () => {
+    users.exists = false;
+
+    await expect(
+      createContext.execute({
+        userId: '123',
+        longitude: 127.0365,
+        latitude: 37.5442,
+      }),
+    ).rejects.toMatchObject({
+      code: 'AUTHENTICATED_USER_NOT_FOUND',
+      status: 401,
+    });
   });
 
   it('returns service-area and no-building errors distinctly', async () => {

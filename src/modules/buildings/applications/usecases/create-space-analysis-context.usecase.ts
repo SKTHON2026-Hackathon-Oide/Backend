@@ -14,6 +14,10 @@ import {
 import { SpaceAnalysisContext } from '../../infrastructure/persistence/typeorm/entities/space-analysis-context.entity';
 import { SpaceAnalysisContextStatus } from '../../domain/enums/space-analysis-context-status.enum';
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
+import {
+  USER_PRESENCE_PORT,
+  type UserPresencePort,
+} from '../../../auth/domain/ports/user-presence.port';
 
 const MAX_BUILDING_CANDIDATES = 20;
 const CONTEXT_TTL_HOURS = 24;
@@ -25,12 +29,21 @@ export class CreateSpaceAnalysisContextUseCase {
     private readonly buildingSearch: BuildingSearchPort,
     @Inject(SPACE_ANALYSIS_CONTEXT_REPOSITORY)
     private readonly contextRepository: SpaceAnalysisContextRepository,
+    @Inject(USER_PRESENCE_PORT)
+    private readonly userPresence: UserPresencePort,
   ) {}
 
   async execute(
     command: CreateSpaceAnalysisContextCommand,
   ): Promise<SpaceAnalysisContextResult> {
     this.validateCoordinate(command.longitude, command.latitude);
+
+    if (!(await this.userPresence.existsActiveUser(command.userId))) {
+      throw new SpaceAnalysisContextError(
+        'AUTHENTICATED_USER_NOT_FOUND',
+        '인증된 사용자를 찾을 수 없습니다. users 테이블 동기화 후 다시 시도해 주세요.',
+      );
+    }
 
     const point = {
       longitude: command.longitude,

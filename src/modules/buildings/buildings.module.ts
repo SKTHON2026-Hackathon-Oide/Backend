@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { Building } from './infrastructure/persistence/typeorm/entities/building.entity';
 import { GisBuilding } from './infrastructure/persistence/typeorm/entities/gis-building.entity';
 import { GisDatasetImport } from './infrastructure/persistence/typeorm/entities/gis-dataset-import.entity';
@@ -24,6 +25,7 @@ import { BUILDING_REGISTRY_LOADER } from './domain/ports/building-registry-loade
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       Building,
       GisBuilding,

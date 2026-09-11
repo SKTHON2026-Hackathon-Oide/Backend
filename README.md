@@ -54,7 +54,9 @@ npm run start:dev
 
 좌표에서 분석 대상 건물 후보를 찾고 사용자가 한 건물을 선택하는 API를 제공한다.
 현재 인증 미들웨어가 연결되기 전 단계이므로 요청에는 내부 사용자 ID를
-`X-User-Id` 헤더로 전달한다.
+`X-User-Id` 헤더로 전달한다. 이 값은 임의의 숫자가 아니라 `users` 테이블에
+동기화된 활성 내부 사용자 ID여야 한다. 존재하지 않으면 API는
+`401 AUTHENTICATED_USER_NOT_FOUND`를 반환한다.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/space-analysis-contexts \
