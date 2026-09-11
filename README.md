@@ -37,7 +37,8 @@ npm run start:dev
 ```
 
 이 명령은 TypeORM migration, 원천 staging/transform, 업종 정규화,
-건축물-상권 공간 조인, 경쟁도·수요도 계산 및 최종 검증을 순서대로 실행한다.
+100개 업종별 분석 프로파일, 건축물-상권 공간 조인, 경쟁도·수요도 계산 및
+최종 검증을 순서대로 실행한다.
 자세한 변경 내역과 재실행 주의사항은
 [`docs/preprocessing-worklog.md`](docs/preprocessing-worklog.md)를 참고한다.
 

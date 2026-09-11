@@ -33,6 +33,7 @@
 
 \echo '== 9/11 taxonomy and source-store normalization =='
 \ir ../seeds/business_category/business-category-seed.sql
+\ir ../seeds/business_category/business-category-analysis-profile-seed.sql
 \ir ../seeds/business_category/store-category-mapping-seed.sql
 
 \echo '== 10/11 derived spatial links and feature scores =='

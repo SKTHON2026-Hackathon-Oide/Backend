@@ -31,4 +31,6 @@ The dump was produced with PostgreSQL 17.11 / `pg_dump` 17.11 and includes the
 2025 Q1 through 2026 Q2 commercial-area floating-population snapshot: 9,892
 observations across 1,650 commercial areas. It also includes the REB vacancy
 source schema, 69 statistical-area polygons, 173 reporting areas, and 1,384
-quarterly observations.
+quarterly observations. All 100 canonical business categories have one active
+`hackathon-v1` analysis profile with versioned AI-heuristic audience, time,
+space, access, operating, and risk criteria.

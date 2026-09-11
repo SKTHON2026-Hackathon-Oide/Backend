@@ -205,3 +205,22 @@ infra/databases/validation/feature-preprocessing-validation.sql
 - `gis_building`은 현재 사용하지 않는 레거시 테이블로 유지한다.
 - `commercial_area_feature`는 가공 피처 테이블이므로 원천 유동인구를 직접
   복제하지 않는다.
+
+## 업종별 분석 프로파일
+
+추천 MCP의 결정론적 사전 점수 계산을 위해 100개 표준 생활밀접업종 각각에
+`hackathon-v1` 분석 프로파일을 추가했다.
+
+- 마이그레이션:
+  `src/database/migrations/0000000000010-create-business-category-analysis-profile.ts`
+- 엔티티:
+  `src/modules/commercial-areas/infrastructure/persistence/typeorm/entities/business-category-analysis-profile.entity.ts`
+- 시드:
+  `infra/databases/seeds/business_category/business-category-analysis-profile-seed.sql`
+
+프로파일은 대상 연령대, 피크 시간·요일, 선호 층, 권장 면적과 유동인구·상주인구·
+직장인구·교통·가시성·주차·배달·경쟁·임대료 민감도 등의 1~5 기준을 포함한다.
+현재 값은 실측치가 아니라 해커톤용 `AI_HEURISTIC`이며 신뢰도는 `LOW`로 명시한다.
+향후 실제 매출·인허가·건축물 데이터를 이용한 `EMPIRICAL` 버전을 별도 행으로
+추가하고 활성 프로파일만 교체할 수 있도록 업종·버전 유일성과 업종별 활성 행
+유일성을 적용했다.
