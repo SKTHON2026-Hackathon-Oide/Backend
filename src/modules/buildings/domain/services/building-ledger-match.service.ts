@@ -78,6 +78,9 @@ export class BuildingLedgerMatchService {
     }
 
     const top = candidates[0];
+    if (top.score === 0) {
+      return { status: 'NOT_FOUND', selected: null, candidates: [] };
+    }
     const second = candidates[1];
     const gap = second ? top.score - second.score : top.score;
     const isConfident =

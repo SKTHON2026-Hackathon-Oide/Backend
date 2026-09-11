@@ -1,6 +1,13 @@
 import { BuildingRegistryStatus } from '../../domain/enums/building-registry-status.enum';
 import { RegistrySpaceOption } from '../../domain/services/registry-space-option.service';
-import { LedgerMatchCandidate } from '../../domain/services/building-ledger-match.service';
+
+export interface RegistryBuildingCandidate {
+  registryKey: string;
+  buildingName: string | null;
+  address: string | null;
+  score: number;
+  reasons: string[];
+}
 
 export interface BuildingRegistryResult {
   registryStatus: BuildingRegistryStatus;
@@ -10,7 +17,7 @@ export interface BuildingRegistryResult {
     confidence: number | null;
     sourceAsOf: string | null;
   } | null;
-  ambiguousCandidates: LedgerMatchCandidate[];
+  ambiguousCandidates: RegistryBuildingCandidate[];
   housingPrice: {
     amount: number;
     sourceAsOf: string | null;

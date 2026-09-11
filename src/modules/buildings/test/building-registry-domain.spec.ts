@@ -62,6 +62,36 @@ describe('building registry domain services', () => {
     expect(result.selected).toBeNull();
   });
 
+  it('treats candidates with no matching evidence as not found', () => {
+    const result = new BuildingLedgerMatchService().match(
+      {
+        buildingId: '1',
+        pnu: '1111010100100120000',
+        buildingName: '내부 건물',
+        jibunAddress: '서울 종로구 1-2',
+        mainUseName: null,
+        groundFloorCount: null,
+        undergroundFloorCount: null,
+        totalFloorAreaSqm: null,
+      },
+      [
+        {
+          mgmBldrgstPk: 'a',
+          buildingName: '무관한 건물',
+          address: '서울 종로구 99-99',
+          mainUseCode: null,
+          mainUseName: null,
+          aboveGroundFloorCount: null,
+          belowGroundFloorCount: null,
+          totalFloorAreaSqm: null,
+          sourceCreatedAt: null,
+        },
+      ],
+    );
+
+    expect(result).toMatchObject({ status: 'NOT_FOUND', candidates: [] });
+  });
+
   it('sums exclusive/common area rows and keeps floor-only options separate', () => {
     const service = new RegistrySpaceOptionService();
     const units = service.create(

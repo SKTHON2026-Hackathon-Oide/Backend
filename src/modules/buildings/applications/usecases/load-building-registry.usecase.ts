@@ -16,15 +16,22 @@ import {
   type BuildingRegistryGateway,
 } from '../../domain/ports/building-registry.gateway.port';
 import { PnuBuildingHubQueryFactory } from '../../domain/services/pnu-building-hub-query.factory';
-import { BuildingLedgerMatchService } from '../../domain/services/building-ledger-match.service';
+import {
+  BuildingLedgerMatchService,
+  type LedgerMatchCandidate,
+} from '../../domain/services/building-ledger-match.service';
 import { RegistrySpaceOptionService } from '../../domain/services/registry-space-option.service';
-import { BuildingRegistryResult } from '../results/building-registry.result';
+import {
+  BuildingRegistryResult,
+  RegistryBuildingCandidate,
+} from '../results/building-registry.result';
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
 import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
-const CACHE_VERSION = 'building-hub-v3';
+const CACHE_VERSION = 'building-hub-v4';
 const CACHE_TTL_DAYS = 30;
 const NOT_FOUND_TTL_DAYS = 1;
+const MAX_AMBIGUOUS_CANDIDATES = 20;
 
 @Injectable()
 export class LoadBuildingRegistryUseCase {
@@ -133,7 +140,7 @@ export class LoadBuildingRegistryUseCase {
         registryStatus:
           BuildingRegistryStatus.REGISTRY_BUILDING_SELECTION_REQUIRED,
         ledgerMatch: null,
-        ambiguousCandidates: match.candidates,
+        ambiguousCandidates: this.toAmbiguousCandidates(match.candidates),
         housingPrice: null,
         spaceOptions: [],
         manualInputAllowed: true,
@@ -301,5 +308,17 @@ export class LoadBuildingRegistryUseCase {
           sourceAsOf: latest.sourceCreatedAt,
         }
       : null;
+  }
+
+  private toAmbiguousCandidates(
+    candidates: LedgerMatchCandidate[],
+  ): RegistryBuildingCandidate[] {
+    return candidates.slice(0, MAX_AMBIGUOUS_CANDIDATES).map((candidate) => ({
+      registryKey: candidate.group.registryKey,
+      buildingName: candidate.group.buildingName,
+      address: candidate.group.address,
+      score: candidate.score,
+      reasons: candidate.reasons,
+    }));
   }
 }
