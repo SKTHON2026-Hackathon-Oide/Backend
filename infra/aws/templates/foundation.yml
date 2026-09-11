@@ -11,7 +11,7 @@ Parameters:
     Default: SKTHON2026-Hackathon-Oide/Backend
   GitHubSubject:
     Type: String
-    Default: repo:SKTHON2026-Hackathon-Oide/Backend:environment:dev
+    Default: repo:SKTHON2026-Hackathon-Oide@326796625/Backend@1362204561:environment:dev
 
 Resources:
   GitHubOidcProvider:
