@@ -25,15 +25,16 @@ export class BuildingHubClient implements BuildingRegistryGateway {
     const serviceKey = this.config.get<string>('BUILDING_HUB_SERVICE_KEY');
     if (!serviceKey) {
       throw new BuildingHubClientError(
-        'REGISTRY_INVALID_RESPONSE',
+        'REGISTRY_CONFIGURATION_ERROR',
         'BUILDING_HUB_SERVICE_KEY가 설정되지 않았습니다.',
       );
     }
+    const normalizedServiceKey = this.normalizeServiceKey(serviceKey);
 
     const [basisPage, floorPage, areaPage] = await Promise.all([
-      this.fetchAll('getBrBasisOulnInfo', serviceKey, query),
-      this.fetchAll('getBrFlrOulnInfo', serviceKey, query),
-      this.fetchAll('getBrExposPubuseAreaInfo', serviceKey, query),
+      this.fetchAll('getBrBasisOulnInfo', normalizedServiceKey, query),
+      this.fetchAll('getBrFlrOulnInfo', normalizedServiceKey, query),
+      this.fetchAll('getBrExposPubuseAreaInfo', normalizedServiceKey, query),
     ]);
 
     return {
@@ -108,28 +109,19 @@ export class BuildingHubClient implements BuildingRegistryGateway {
           headers: { accept: 'application/json' },
         });
         const rawText = await response.text();
-        const raw = this.parseJson(rawText);
         if (!response.ok) {
+          const providerError = this.providerError(rawText);
+          if (providerError) throw providerError;
           if (response.status >= 500 && attempt < MAX_RETRIES) continue;
           throw new BuildingHubClientError(
             'REGISTRY_HTTP_ERROR',
             `건축물대장 API HTTP ${response.status} 응답입니다.`,
           );
         }
+        const raw = this.parseJson(rawText);
         return this.parsePage(raw);
       } catch (error) {
-        if (
-          error instanceof BuildingHubClientError &&
-          error.code === 'REGISTRY_INVALID_RESPONSE'
-        ) {
-          throw error;
-        }
-        if (
-          error instanceof BuildingHubClientError &&
-          error.code === 'REGISTRY_HTTP_ERROR'
-        ) {
-          throw error;
-        }
+        if (error instanceof BuildingHubClientError) throw error;
         if (controller.signal.aborted) {
           if (attempt < MAX_RETRIES) continue;
           throw new BuildingHubClientError(
@@ -167,6 +159,8 @@ export class BuildingHubClient implements BuildingRegistryGateway {
   private parsePage(raw: unknown): BuildingHubPage {
     const root = this.asRecord(raw);
     if (!root.response && !root.body) {
+      const providerError = this.providerErrorFromJson(root);
+      if (providerError) throw providerError;
       throw new BuildingHubClientError(
         'REGISTRY_INVALID_RESPONSE',
         '건축물대장 API 응답 구조가 올바르지 않습니다.',
@@ -205,6 +199,46 @@ export class BuildingHubClient implements BuildingRegistryGateway {
       );
     }
     return { totalCount, items, raw };
+  }
+
+  private normalizeServiceKey(serviceKey: string): string {
+    try {
+      // data.go.kr's "Encoding" key is already percent-encoded. URLSearchParams
+      // encodes query values itself, so normalize it first to avoid % becoming %25.
+      return decodeURIComponent(serviceKey);
+    } catch {
+      return serviceKey;
+    }
+  }
+
+  private providerError(rawText: string): BuildingHubClientError | null {
+    try {
+      return this.providerErrorFromJson(this.asRecord(JSON.parse(rawText)));
+    } catch {
+      return null;
+    }
+  }
+
+  private providerErrorFromJson(
+    raw: Record<string, unknown>,
+  ): BuildingHubClientError | null {
+    const header = this.asRecord(raw.cmmMsgHeader ?? raw.header);
+    const reasonCode = this.asString(
+      header.returnReasonCode ?? header.resultCode ?? header.result_code,
+    );
+    const message = this.asString(
+      header.returnAuthMsg ??
+        header.errMsg ??
+        header.resultMsg ??
+        header.result_msg,
+    );
+    if (!reasonCode && !message) return null;
+
+    const isAuthenticationError = ['20', '30', '31'].includes(reasonCode ?? '');
+    return new BuildingHubClientError(
+      isAuthenticationError ? 'REGISTRY_AUTH_ERROR' : 'REGISTRY_HTTP_ERROR',
+      `건축물대장 API 오류${reasonCode ? ` 코드 ${reasonCode}` : ''}${message ? `: ${message}` : ''}`,
+    );
   }
 
   private mapBasis(item: Record<string, unknown>): BuildingHubBasisRecord {

@@ -35,7 +35,7 @@ describe('BuildingHubClient', () => {
       );
     const client = new BuildingHubClient(
       new ConfigService({
-        BUILDING_HUB_SERVICE_KEY: 'test-key',
+        BUILDING_HUB_SERVICE_KEY: 'test%2Bkey%3D',
         BUILDING_HUB_TIMEOUT_MS: '1000',
       }),
     );
@@ -54,6 +54,29 @@ describe('BuildingHubClient', () => {
     expect(firstRequest.pathname).toBe(
       '/1613000/BldRgstHubService/getBrBasisOulnInfo',
     );
+    expect(firstRequest.searchParams.get('serviceKey')).toBe('test+key=');
+  });
+
+  it('classifies data.go.kr service-key errors without hiding them as HTTP errors', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          cmmMsgHeader: {
+            errMsg: 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR',
+            returnAuthMsg: 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR',
+            returnReasonCode: '30',
+          },
+        }),
+        { status: 401, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const client = new BuildingHubClient(
+      new ConfigService({ BUILDING_HUB_SERVICE_KEY: 'test-key' }),
+    );
+
+    await expect(client.fetchByParcel(query)).rejects.toMatchObject({
+      code: 'REGISTRY_AUTH_ERROR',
+    });
   });
 
   it('rejects non-JSON responses', async () => {

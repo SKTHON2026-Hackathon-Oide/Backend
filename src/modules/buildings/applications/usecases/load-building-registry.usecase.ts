@@ -20,6 +20,7 @@ import { BuildingLedgerMatchService } from '../../domain/services/building-ledge
 import { RegistrySpaceOptionService } from '../../domain/services/registry-space-option.service';
 import { BuildingRegistryResult } from '../results/building-registry.result';
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
+import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
 const CACHE_VERSION = 'building-hub-v1';
 const CACHE_TTL_DAYS = 30;
@@ -260,10 +261,8 @@ export class LoadBuildingRegistryUseCase {
   }
 
   private errorCode(error: unknown): string {
-    return error instanceof Error && error.name === 'BuildingHubClientError'
-      ? error.message.includes('시간')
-        ? 'REGISTRY_TIMEOUT'
-        : 'REGISTRY_HTTP_ERROR'
+    return error instanceof BuildingHubClientError
+      ? error.code
       : 'REGISTRY_UNAVAILABLE';
   }
 }
