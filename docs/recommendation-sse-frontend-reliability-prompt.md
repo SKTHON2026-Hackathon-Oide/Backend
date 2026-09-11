@@ -9,7 +9,7 @@
 ## 적용 API
 
 - 공실추천 생성: `POST /api/v1/buildings/{buildingId}/recommendation-requests`
-- 입지추천 생성: `POST /api/v1/business-location-recommendation-requests`
+- 입지추천 생성: `POST /api/v1/business-location-recommendation-requests` (응답의 `resultUrl`은 `/api/v1/business-location-recommendation-requests/{requestId}`)
 - 공통 SSE: `GET /api/v1/recommendation-requests/{requestId}/events`
 - 공통 상태·결과: `GET /api/v1/recommendation-requests/{requestId}`
 

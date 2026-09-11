@@ -50,7 +50,7 @@ Content-Type: application/json
     "requestId": "12345",
     "status": "QUEUED",
     "eventsUrl": "/api/v1/recommendation-requests/12345/events",
-    "resultUrl": "/api/v1/recommendation-requests/12345"
+    "resultUrl": "/api/v1/business-location-recommendation-requests/12345"
   }
 }
 ```
@@ -94,7 +94,7 @@ SSE의 정상 종료, 네트워크 오류, 이벤트 파싱 오류만으로 “�
 ## 결과 조회 및 화면 표시
 
 ```http
-GET /api/v1/recommendation-requests/12345
+GET /api/v1/business-location-recommendation-requests/12345
 Authorization: Bearer <clerk-session-token>
 ```
 

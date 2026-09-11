@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   HttpCode,
   HttpException,
   HttpStatus,
+  Param,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -39,6 +42,27 @@ export class BusinessLocationRecommendationController {
         body,
         idempotencyKey,
       );
+    } catch (error) {
+      throw this.toHttp(error);
+    }
+  }
+
+  /**
+   * Keep a resource-specific status URL for clients that treat the business
+   * location request as its own resource. The shared recommendation endpoint
+   * remains available for backwards compatibility and for the SSE stream.
+   */
+  @Get('business-location-recommendation-requests/:requestId')
+  @ApiOperation({ summary: '희망 업종 기반 상권 추천 요청 상태·결과 조회' })
+  async get(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId') requestId: string,
+  ) {
+    if (!/^[1-9]\d*$/.test(requestId)) {
+      throw new BadRequestException('requestId는 양의 정수여야 합니다.');
+    }
+    try {
+      return await this.orchestrator.getOwned(requestId, user.internalUserId);
     } catch (error) {
       throw this.toHttp(error);
     }

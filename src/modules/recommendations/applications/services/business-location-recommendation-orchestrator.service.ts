@@ -588,7 +588,7 @@ export class BusinessLocationRecommendationOrchestratorService
       requestId: request.id,
       status: request.status,
       eventsUrl: `/api/v1/recommendation-requests/${request.id}/events`,
-      resultUrl: `/api/v1/recommendation-requests/${request.id}`,
+      resultUrl: `/api/v1/business-location-recommendation-requests/${request.id}`,
     };
   }
   private isUnique(error: unknown) {
