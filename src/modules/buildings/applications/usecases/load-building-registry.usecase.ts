@@ -22,7 +22,7 @@ import { BuildingRegistryResult } from '../results/building-registry.result';
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
 import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
-const CACHE_VERSION = 'building-hub-v1';
+const CACHE_VERSION = 'building-hub-v2';
 const CACHE_TTL_DAYS = 30;
 const NOT_FOUND_TTL_DAYS = 1;
 
