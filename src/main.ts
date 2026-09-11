@@ -2,14 +2,45 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Reflector } from '@nestjs/core';
+import { clerkMiddleware } from '@clerk/express';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './modules/common/interceptors/response.interceptor';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
+  const authorizedParties = (process.env.CLERK_AUTHORIZED_PARTIES ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const clerkConfigured = Boolean(
+    process.env.CLERK_PUBLISHABLE_KEY &&
+    (process.env.CLERK_SECRET_KEY || process.env.CLERK_JWT_KEY),
+  );
+  if (clerkConfigured) {
+    app.use(
+      clerkMiddleware({
+        publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+        secretKey: process.env.CLERK_SECRET_KEY,
+        jwtKey: process.env.CLERK_JWT_KEY,
+        authorizedParties: authorizedParties.length
+          ? authorizedParties
+          : undefined,
+      }),
+    );
+  }
+
   app.setGlobalPrefix('api');
-  app.enableCors();
+  app.enableCors({
+    origin: authorizedParties.length ? authorizedParties : true,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Idempotency-Key',
+      'Last-Event-Id',
+    ],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

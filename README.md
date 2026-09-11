@@ -53,24 +53,39 @@ npm run start:dev
 ## 공간 분석 컨텍스트 (단계 1)
 
 좌표에서 분석 대상 건물 후보를 찾고 사용자가 한 건물을 선택하는 API를 제공한다.
-현재 인증 미들웨어가 연결되기 전 단계이므로 요청에는 내부 사용자 ID를
-`X-User-Id` 헤더로 전달한다. 이 값은 임의의 숫자가 아니라 `users` 테이블에
-동기화된 활성 내부 사용자 ID여야 한다. 존재하지 않으면 API는
-`401 AUTHENTICATED_USER_NOT_FOUND`를 반환한다.
+Clerk 세션 토큰을 `Authorization: Bearer <token>` 헤더로 전달한다. 백엔드는
+검증된 토큰의 Clerk 사용자 ID(`sub`)를 `users.clerk_id`와 연결하고, 최초 인증
+요청에서 로컬 `users` 레코드를 멱등적으로 생성한다. 내부 `users.id`나
+`X-User-Id` 헤더는 클라이언트가 전달하지 않는다.
+
+프론트가 로그인 직후 아래 API를 호출하면 연결 상태를 명시적으로 확인할 수
+있다. 같은 요청을 반복해도 안전한 멱등 등록 API다.
+
+```bash
+curl -X PUT http://localhost:3000/api/v1/auth/register \
+  -H 'Authorization: Bearer <clerk-session-token>'
+```
+
+현재 연결된 사용자를 조회할 때는 `GET /api/v1/auth/me`를 사용한다.
+
+Clerk Dashboard의 webhook endpoint는 `POST /api/webhooks/clerk`로 설정한다.
+`user.created`, `user.updated`, `user.deleted` 이벤트를 수신하며
+`CLERK_WEBHOOK_SIGNING_SECRET`으로 서명을 검증한다. 웹훅은 보조 동기화이고,
+최초 사용자 등록의 동기적 보장은 인증 요청의 멱등 upsert가 담당한다.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/space-analysis-contexts \
   -H 'Content-Type: application/json' \
-  -H 'X-User-Id: 1' \
+  -H 'Authorization: Bearer <clerk-session-token>' \
   -d '{"longitude":127.0365,"latitude":37.5442}'
 
 curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/building \
   -H 'Content-Type: application/json' \
-  -H 'X-User-Id: 1' \
+  -H 'Authorization: Bearer <clerk-session-token>' \
   -d '{"buildingId":"12345"}'
 
 curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/space-detail/skip \
-  -H 'X-User-Id: 1'
+  -H 'Authorization: Bearer <clerk-session-token>'
 ```
 
 정확히 건물 안에 포함되는 후보를 먼저 찾고, 없을 때만 10m 이내 최근접 후보를
@@ -131,16 +146,16 @@ AWS에서는 `codex-agent` 이미지를 API 컨테이너에서 직접 실행하�
 ```bash
 curl -X POST http://localhost:3000/api/v1/buildings/<buildingId>/recommendation-requests \
   -H 'Content-Type: application/json' \
-  -H 'X-User-Id: <users.id>' \
+  -H 'Authorization: Bearer <clerk-session-token>' \
   -H 'Idempotency-Key: <uuid>' \
   -d '{}'
 
 curl -N http://localhost:3000/api/v1/recommendation-requests/<requestId>/events \
-  -H 'X-User-Id: <users.id>' \
+  -H 'Authorization: Bearer <clerk-session-token>' \
   -H 'Last-Event-ID: 0'
 
 curl http://localhost:3000/api/v1/recommendation-requests/<requestId> \
-  -H 'X-User-Id: <users.id>'
+  -H 'Authorization: Bearer <clerk-session-token>'
 ```
 
 SSE 연결이 끊기면 마지막으로 받은 이벤트 ID를 `Last-Event-ID` 헤더로 다시 보내

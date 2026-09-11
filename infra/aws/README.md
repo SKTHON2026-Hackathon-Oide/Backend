@@ -6,7 +6,10 @@
 
 Secrets Manager에 아래 세 secret을 생성한다. 값은 GitHub나 저장소에 넣지 않는다.
 
-- `skthon/dev/backend-runtime`: `DB_USERNAME`, `DB_PASSWORD`와 backend에서 필요한 외부 API key를 JSON으로 저장한다.
+- `skthon/dev/backend-runtime`: `DB_USERNAME`, `DB_PASSWORD`,
+  `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`,
+  `CLERK_AUTHORIZED_PARTIES`, `CLERK_WEBHOOK_SIGNING_SECRET`와 backend에서
+  필요한 외부 API key를 JSON으로 저장한다.
 - `skthon/dev/mcp-runtime`: `DB_USERNAME`, `DB_PASSWORD`를 JSON으로 저장한다.
 - `skthon/dev/openai-api-key-*`: OpenAI Platform API key 문자열 하나를 저장한다.
 
@@ -28,5 +31,9 @@ Environment 배포 branch는 `main`만 허용한다. GitHub OIDC trust policy의
 2. foundation/compute change set을 검토한 뒤 실행한다.
 3. Secrets Manager와 GitHub Environment variables를 채운다.
 4. `main` merge 또는 `workflow_dispatch`로 배포한다.
+
+Clerk Dashboard의 dev/production Webhooks에 각각 backend URL을 등록하고
+`user.created`, `user.updated`, `user.deleted` 이벤트를 선택한다. 발급된
+signing secret은 해당 환경의 `CLERK_WEBHOOK_SIGNING_SECRET`으로만 저장한다.
 
 CI는 모든 `main` commit에서 backend, MCP, Codex Agent image를 같은 commit SHA tag로 ECR에 push한다. MCP → backend 순으로 SSM 배포하며 backend 배포 전 production migration을 실행한다.

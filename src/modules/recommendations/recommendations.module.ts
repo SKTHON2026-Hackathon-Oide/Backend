@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { RECOMMENDATION_AGENT } from './domain/ports/recommendation-agent.port';
 import { DeterministicRecommendationAgent } from './infrastructure/agents/deterministic-recommendation-agent';
 import { CodexCliRecommendationAgent } from './infrastructure/agents/codex-cli-recommendation-agent';
@@ -18,6 +19,7 @@ import { RecommendationController } from './interfaces/http/recommendation.contr
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       RecommendationRequest,
       RecommendationEvent,

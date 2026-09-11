@@ -10,9 +10,18 @@ import {
   Param,
   Post,
   Sse,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiHeader, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Observable } from 'rxjs';
+import type { AuthenticatedUser } from '../../../auth/interfaces/http/authenticated-user';
+import { ClerkAuthGuard } from '../../../auth/interfaces/http/clerk-auth.guard';
+import { CurrentUser } from '../../../auth/interfaces/http/current-user.decorator';
 import { SkipResponseInterceptor } from '../../../common/decorators/skip-response-interceptor.decorator';
 import { RecommendationFlowError } from '../../applications/services/recommendation-flow.error';
 import { RecommendationOrchestratorService } from '../../applications/services/recommendation-orchestrator.service';
@@ -20,12 +29,9 @@ import { RecommendationStreamService } from '../../applications/services/recomme
 import { CreateRecommendationRequestDto } from './dto/create-recommendation-request.dto';
 
 @ApiTags('recommendations')
-@ApiHeader({
-  name: 'X-User-Id',
-  required: true,
-  description: '현재 인증 사용자의 내부 users.id',
-})
+@ApiBearerAuth()
 @Controller('v1')
+@UseGuards(ClerkAuthGuard)
 export class RecommendationController {
   constructor(
     private readonly orchestrator: RecommendationOrchestratorService,
@@ -36,12 +42,12 @@ export class RecommendationController {
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({ summary: '건물 위치 기반 비동기 업종 추천 분석 요청' })
   async create(
-    @Headers('x-user-id') userIdHeader: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Param('buildingId') buildingId: string,
     @Body() body: CreateRecommendationRequestDto,
   ): Promise<Record<string, unknown>> {
-    const userId = this.parsePositiveInteger(userIdHeader, 'X-User-Id');
+    const userId = user.internalUserId;
     this.validateId(buildingId, 'buildingId');
     try {
       return await this.orchestrator.create(
@@ -58,10 +64,10 @@ export class RecommendationController {
   @Get('recommendation-requests/:requestId')
   @ApiOperation({ summary: '추천 분석 요청 상태·결과 조회' })
   async get(
-    @Headers('x-user-id') userIdHeader: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('requestId') requestId: string,
   ): Promise<Record<string, unknown>> {
-    const userId = this.parsePositiveInteger(userIdHeader, 'X-User-Id');
+    const userId = user.internalUserId;
     this.validateId(requestId, 'requestId');
     try {
       return await this.orchestrator.getOwned(requestId, userId);
@@ -75,11 +81,11 @@ export class RecommendationController {
   @ApiProduces('text/event-stream')
   @ApiOperation({ summary: '추천 분석 진행 상황 SSE 스트림' })
   stream(
-    @Headers('x-user-id') userIdHeader: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
     @Headers('last-event-id') lastEventId: string | undefined,
     @Param('requestId') requestId: string,
   ): Observable<MessageEvent> {
-    const userId = this.parsePositiveInteger(userIdHeader, 'X-User-Id');
+    const userId = user.internalUserId;
     this.validateId(requestId, 'requestId');
     const afterId =
       lastEventId && /^\d+$/.test(lastEventId) ? lastEventId : '0';
@@ -96,16 +102,6 @@ export class RecommendationController {
           subscriber.error(this.toHttpException(error)),
         );
     });
-  }
-
-  private parsePositiveInteger(
-    value: string | undefined,
-    field: string,
-  ): string {
-    if (!value || !/^[1-9]\d*$/.test(value)) {
-      throw new BadRequestException(`${field}는 양의 정수여야 합니다.`);
-    }
-    return value;
   }
 
   private validateId(value: string, field: string): void {
