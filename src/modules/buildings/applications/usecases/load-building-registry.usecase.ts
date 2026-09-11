@@ -31,7 +31,7 @@ import {
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
 import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
-const CACHE_VERSION = 'building-hub-v5';
+const CACHE_VERSION = 'building-hub-v6';
 const CACHE_TTL_DAYS = 30;
 const NOT_FOUND_TTL_DAYS = 1;
 const MAX_REGISTRY_GROUPS = 20;
@@ -152,6 +152,7 @@ export class LoadBuildingRegistryUseCase {
             raw,
             new Set(group.registryKeys),
             group.registryGroupKey,
+            this.dongNameFrom(building.buildingName),
           ),
         ]),
       );
@@ -161,6 +162,9 @@ export class LoadBuildingRegistryUseCase {
         ledgerMatch: null,
         ambiguousCandidates: groups.map((group) => ({
           ...group,
+          registryKeys: this.registryKeysFrom(
+            optionsByGroup.get(group.registryGroupKey) ?? [],
+          ),
           spaceOptionCount:
             optionsByGroup.get(group.registryGroupKey)?.length ?? 0,
         })),
@@ -199,7 +203,12 @@ export class LoadBuildingRegistryUseCase {
         .map((record) => record.mgmBldrgstPk)
         .filter((value): value is string => value !== null),
     );
-    const spaceOptions = this.spaceOptionsFor(raw, registryKeys, null);
+    const spaceOptions = this.spaceOptionsFor(
+      raw,
+      registryKeys,
+      null,
+      this.dongNameFrom(building.buildingName),
+    );
     const housingPrice = this.housingPriceFor(raw.housingPrices, registryKeys);
     const registryStatus = this.statusForOptions(spaceOptions);
     const sourceAsOf =
@@ -366,13 +375,22 @@ export class LoadBuildingRegistryUseCase {
     raw: Awaited<ReturnType<BuildingRegistryGateway['fetchByParcel']>>,
     registryKeys: Set<string>,
     registryGroupKey: string | null,
+    dongName: string | null,
   ): RegistrySpaceOption[] {
     const includesKey = (value: string | null) =>
       registryKeys.size === 0 || value === null || registryKeys.has(value);
+    const includesDong = (value: string | null) =>
+      dongName === null || this.normalizeDongName(value) === dongName;
     return this.optionService
       .create(
-        raw.areas.filter((record) => includesKey(record.mgmBldrgstPk)),
-        raw.floors.filter((record) => includesKey(record.mgmBldrgstPk)),
+        raw.areas.filter(
+          (record) =>
+            includesKey(record.mgmBldrgstPk) && includesDong(record.dongName),
+        ),
+        raw.floors.filter(
+          (record) =>
+            includesKey(record.mgmBldrgstPk) && includesDong(record.dongName),
+        ),
       )
       .map((option) => ({ ...option, registryGroupKey }));
   }
@@ -416,5 +434,25 @@ export class LoadBuildingRegistryUseCase {
 
   private normalize(value: string | null): string {
     return (value ?? '').replace(/\s+/g, '').toLocaleLowerCase('ko-KR');
+  }
+
+  private dongNameFrom(buildingName: string | null): string | null {
+    const match = buildingName?.match(/(?:^|\s)(\d+)\s*동(?:\s|$)/);
+    return match ? `${match[1]}동` : null;
+  }
+
+  private normalizeDongName(value: string | null): string | null {
+    const match = value?.match(/(\d+)\s*동/);
+    return match ? `${match[1]}동` : null;
+  }
+
+  private registryKeysFrom(options: RegistrySpaceOption[]): string[] {
+    return [
+      ...new Set(
+        options
+          .map((option) => option.registryKey)
+          .filter((value): value is string => value !== null),
+      ),
+    ];
   }
 }
