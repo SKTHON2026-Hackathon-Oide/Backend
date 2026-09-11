@@ -7,7 +7,7 @@ export class CreateSpaceAnalysisContext2026091100011 implements MigrationInterfa
     await queryRunner.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
 
     await queryRunner.query(`
-      CREATE TABLE space_analysis_context (
+      CREATE TABLE IF NOT EXISTS space_analysis_context (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id BIGINT NOT NULL REFERENCES users(id),
         longitude NUMERIC(10,7) NOT NULL,
@@ -51,13 +51,13 @@ export class CreateSpaceAnalysisContext2026091100011 implements MigrationInterfa
     `);
 
     await queryRunner.query(
-      `CREATE INDEX space_analysis_context_user_created_idx ON space_analysis_context (user_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS space_analysis_context_user_created_idx ON space_analysis_context (user_id, created_at DESC)`,
     );
     await queryRunner.query(
-      `CREATE INDEX space_analysis_context_expires_idx ON space_analysis_context (expires_at)`,
+      `CREATE INDEX IF NOT EXISTS space_analysis_context_expires_idx ON space_analysis_context (expires_at)`,
     );
     await queryRunner.query(
-      `CREATE INDEX space_analysis_context_selected_building_idx ON space_analysis_context (selected_building_id)`,
+      `CREATE INDEX IF NOT EXISTS space_analysis_context_selected_building_idx ON space_analysis_context (selected_building_id)`,
     );
   }
 
