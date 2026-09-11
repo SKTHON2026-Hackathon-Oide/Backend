@@ -52,7 +52,9 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
         analysisContext: this.toAnalysisContext(packet, context),
       },
       null,
-    );
+    ).catch((error: unknown) => {
+      throw this.normalizeRunnerError(error);
+    });
   }
 
   generateBusinessLocation(
@@ -65,7 +67,9 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
         analysisContext: packet.input,
       },
       'business-location',
-    );
+    ).catch((error: unknown) => {
+      throw this.normalizeRunnerError(error);
+    });
   }
 
   private async runJob<T>(
@@ -313,6 +317,22 @@ export class EcsCodexRecommendationAgent implements RecommendationAgentPort {
     const error = new Error(message);
     error.name = 'CODEX_AGENT_RUNNER_ERROR';
     return error;
+  }
+
+  private normalizeRunnerError(error: unknown): Error {
+    if (
+      error instanceof Error &&
+      [
+        'MODEL_TIMEOUT',
+        'CODEX_AGENT_RUNNER_ERROR',
+        'AGENT_RESULT_NOT_AVAILABLE',
+        'INVALID_MODEL_OUTPUT',
+        'RECOMMENDATION_AGENT_NOT_CONFIGURED',
+      ].includes(error.name)
+    ) {
+      return error;
+    }
+    return this.runnerError(this.errorMessage(error));
   }
 
   private errorMessage(error: unknown): string {

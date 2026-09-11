@@ -229,6 +229,7 @@ export class BusinessLocationRecommendationOrchestratorService
   }
 
   async process(requestId: string): Promise<void> {
+    let phase = 'RESOLVING_LOCATION';
     let claim: Array<{
       business_category_code: string;
       preferred_administrative_area_id: string;
@@ -269,6 +270,7 @@ export class BusinessLocationRecommendationOrchestratorService
         25,
         '선호지역 안의 업종·점포·유동인구 근거를 수집하고 있습니다.',
       );
+      phase = 'COLLECTING_EVIDENCE';
       await this.events.publish(requestId, 'tool_started', {
         toolName: 'get_business_location_recommendation_evidence',
       });
@@ -303,6 +305,7 @@ export class BusinessLocationRecommendationOrchestratorService
         65,
         '수집한 근거를 기준으로 후보 상권을 평가하고 있습니다.',
       );
+      phase = 'SCORING_WITH_AI';
       const output = await this.generateWithRetry(packet);
       this.validateOutput(
         output,
@@ -315,6 +318,7 @@ export class BusinessLocationRecommendationOrchestratorService
         85,
         '추천 후보와 점수·근거를 검증하고 있습니다.',
       );
+      phase = 'VALIDATING_RESULT';
       const result = {
         requestId,
         analysisType: 'BUSINESS_TO_AREA',
@@ -371,7 +375,7 @@ export class BusinessLocationRecommendationOrchestratorService
       });
       await this.publishTerminalEventSafely(requestId, 'completed', result);
     } catch (error) {
-      await this.fail(requestId, error);
+      await this.fail(requestId, error, phase);
     } finally {
       stopLeaseHeartbeat();
     }
@@ -396,7 +400,7 @@ export class BusinessLocationRecommendationOrchestratorService
       message,
     });
   }
-  private async fail(requestId: string, error: unknown) {
+  private async fail(requestId: string, error: unknown, phase: string) {
     const code =
       error instanceof RecommendationFlowError
         ? error.code
@@ -418,7 +422,9 @@ export class BusinessLocationRecommendationOrchestratorService
       'CODEX_AGENT_RUNNER_ERROR',
       'AGENT_RESULT_NOT_AVAILABLE',
     ].includes(code);
-    this.logger.error(`Business location request ${requestId} failed: ${code}`);
+    this.logger.error(
+      `Business location request ${requestId} failed during ${phase}: ${code} (${this.failureCause(error)})`,
+    );
     await this.requests.update(requestId, {
       status: 'FAILED',
       currentStage: 'FAILED',
@@ -501,10 +507,28 @@ export class BusinessLocationRecommendationOrchestratorService
     try {
       return await agent.generate(packet);
     } catch (firstError) {
-      if (!this.isRetryableAgentError(firstError)) throw firstError;
-      return agent.generate(packet).catch(() => {
-        throw firstError;
-      });
+      let error: unknown = firstError;
+      if (this.isRetryableAgentError(firstError)) {
+        try {
+          return await agent.generate(packet);
+        } catch (retryError) {
+          error = retryError as unknown;
+        }
+      }
+      if (agent === this.deterministicAgent || !this.canUseFallback(error)) {
+        throw error;
+      }
+      this.logger.warn(
+        `Business location AI agent failed (${this.failureCause(error)}); using deterministic evidence-based fallback.`,
+      );
+      const fallback = await this.deterministicAgent.generate(packet);
+      const warning =
+        'AI 에이전트 실행이 지연되어 수집된 상권 근거 기반의 대체 점수로 결과를 제공했습니다.';
+      return {
+        ...fallback,
+        warnings: [...fallback.warnings, warning],
+        dataLimitations: [...fallback.dataLimitations, warning],
+      };
     }
   }
 
@@ -519,6 +543,19 @@ export class BusinessLocationRecommendationOrchestratorService
     );
   }
 
+  private canUseFallback(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      [
+        'MODEL_TIMEOUT',
+        'CODEX_AGENT_RUNNER_ERROR',
+        'AGENT_RESULT_NOT_AVAILABLE',
+        'INVALID_MODEL_OUTPUT',
+        'RECOMMENDATION_AGENT_NOT_CONFIGURED',
+      ].includes(error.name)
+    );
+  }
+
   private safeFailureMessage(code: string, error: unknown): string {
     if (code === 'RECOMMENDATION_AGENT_NOT_CONFIGURED')
       return 'AI 추천 에이전트 설정이 완료되지 않았습니다.';
@@ -528,9 +565,16 @@ export class BusinessLocationRecommendationOrchestratorService
       return 'Codex 작업 컨테이너 실행에 실패했습니다. 서버 로그를 확인하세요.';
     if (code === 'AGENT_RESULT_NOT_AVAILABLE')
       return 'AI 분석 작업은 종료됐지만 결과 저장 확인이 지연되고 있습니다. 다시 시도해 주세요.';
+    if (code === 'BUSINESS_LOCATION_RECOMMENDATION_FAILED')
+      return '상권 추천 분석 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
     return error instanceof Error
       ? error.message
       : '상권 추천 분석 중 오류가 발생했습니다.';
+  }
+
+  private failureCause(error: unknown): string {
+    if (error instanceof Error) return `${error.name}: ${error.message}`;
+    return String(error);
   }
 
   private startLeaseHeartbeat(requestId: string): () => void {
