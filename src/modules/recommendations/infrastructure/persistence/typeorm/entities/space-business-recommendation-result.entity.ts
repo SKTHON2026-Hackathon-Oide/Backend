@@ -44,8 +44,14 @@ export class SpaceBusinessRecommendationResult {
   @Column({ type: 'smallint' })
   rank: number;
 
-  @Column({ type: 'numeric', precision: 6, scale: 2, name: 'total_score' })
-  totalScore: string;
+  @Column({
+    type: 'numeric',
+    precision: 6,
+    scale: 2,
+    name: 'total_score',
+    nullable: true,
+  })
+  totalScore: string | null;
 
   @Column({ type: 'jsonb', name: 'score_breakdown' })
   scoreBreakdown: Record<string, unknown>;

@@ -1,4 +1,4 @@
-export const RECOMMENDATION_PROMPT_VERSION = 'location-business-agent-v1';
+export const RECOMMENDATION_PROMPT_VERSION = 'location-business-agent-v2';
 export const RECOMMENDATION_METHODOLOGY_VERSION = 'location-business-score-v1';
 export const RECOMMENDATION_PROFILE_VERSION = 'hackathon-v1';
 
@@ -41,6 +41,7 @@ export interface BuildingEvidence {
     name: string;
     type: string | null;
     overlapRatio: number | null;
+    distanceMeters: number | null;
     relation: 'DIRECT' | 'SPATIAL_FALLBACK';
   }>;
   evidenceId: string;
@@ -121,18 +122,41 @@ export interface AgentRecommendation {
   rank: number;
   businessCategoryCode: string;
   businessCategoryName: string;
-  totalScore: number;
-  scoreBreakdown: ScoreBreakdown;
-  recommendedOperatingHours: string[];
-  reasons: string[];
+  totalScore: number | null;
+  confidence: number;
+  oneLineReason: string;
+  evidence: RecommendationEvidence[];
   risks: string[];
-  evidenceIds: string[];
+  operatingTips: string[];
+}
+
+export type RecommendationEvidenceType =
+  'BUILDING' | 'DEMAND' | 'COMPETITION' | 'POPULATION' | 'PROFILE' | 'RISK';
+
+export interface RecommendationEvidence {
+  type: RecommendationEvidenceType;
+  metric: string;
+  value: string | number | Record<string, unknown> | null;
+  unit: string | null;
+  statisticsPeriod: {
+    from: string | null;
+    to: string | null;
+  };
+  interpretation: string;
+}
+
+export interface SelectedCommercialArea {
+  code: string | null;
+  name: string | null;
+  matchMethod: 'OVERLAP' | 'NEAREST' | null;
+  overlapRatio: number | null;
+  distanceMeters: number | null;
 }
 
 export interface RecommendationAgentOutput {
   summary: string;
+  selectedCommercialArea: SelectedCommercialArea;
   recommendations: AgentRecommendation[];
-  topOperatingTimeBands: PopulationBand[];
-  dataAsOf: Record<string, string | null>;
-  missingData: Array<{ key: string; reason: string }>;
+  warnings: string[];
+  dataLimitations: string[];
 }

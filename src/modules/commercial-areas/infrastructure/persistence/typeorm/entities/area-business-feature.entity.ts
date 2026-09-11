@@ -33,16 +33,40 @@ export class AreaBusinessFeature {
   @Column({ type: 'integer', name: 'store_count', nullable: true })
   storeCount: number | null;
 
-  @Column({ type: 'numeric', precision: 18, scale: 2, name: 'estimated_sales_amount', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 18,
+    scale: 2,
+    name: 'estimated_sales_amount',
+    nullable: true,
+  })
   estimatedSalesAmount: string | null;
 
-  @Column({ type: 'numeric', precision: 6, scale: 4, name: 'closure_rate', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 6,
+    scale: 4,
+    name: 'closure_rate',
+    nullable: true,
+  })
   closureRate: string | null;
 
-  @Column({ type: 'numeric', precision: 8, scale: 4, name: 'competition_score', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 4,
+    name: 'competition_score',
+    nullable: true,
+  })
   competitionScore: string | null;
 
-  @Column({ type: 'numeric', precision: 8, scale: 4, name: 'demand_score', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 4,
+    name: 'demand_score',
+    nullable: true,
+  })
   demandScore: string | null;
 
   @Column({ type: 'timestamp', name: 'updated_at', default: () => 'now()' })

@@ -40,16 +40,40 @@ export class RentStatistic {
   @Column({ type: 'date', name: 'base_period' })
   basePeriod: string;
 
-  @Column({ type: 'numeric', precision: 14, scale: 2, name: 'avg_rent', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    name: 'avg_rent',
+    nullable: true,
+  })
   avgRent: string | null;
 
-  @Column({ type: 'numeric', precision: 14, scale: 2, name: 'avg_rent_per_sqm', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    name: 'avg_rent_per_sqm',
+    nullable: true,
+  })
   avgRentPerSqm: string | null;
 
-  @Column({ type: 'numeric', precision: 18, scale: 2, name: 'average_deposit', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 18,
+    scale: 2,
+    name: 'average_deposit',
+    nullable: true,
+  })
   averageDeposit: string | null;
 
-  @Column({ type: 'numeric', precision: 5, scale: 2, name: 'vacancy_rate', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    name: 'vacancy_rate',
+    nullable: true,
+  })
   vacancyRate: string | null;
 
   @Column({ type: 'timestamp', name: 'created_at', default: () => 'now()' })

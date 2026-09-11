@@ -86,6 +86,9 @@ export class RecommendationStreamService {
               ),
             );
           buffered.length = 0;
+          if (this.isTerminalStatus(request?.status)) {
+            subscriber.complete();
+          }
         } catch (error) {
           subscriber.error(error);
         }
@@ -96,6 +99,10 @@ export class RecommendationStreamService {
         removeListener();
       };
     });
+  }
+
+  private isTerminalStatus(status: string | undefined): boolean {
+    return status === 'COMPLETED' || status === 'FAILED';
   }
 
   private emitEventIfNew(

@@ -27,19 +27,47 @@ export class CommercialAreaFeature {
   @Column({ type: 'date', name: 'base_period' })
   basePeriod: string;
 
-  @Column({ type: 'integer', name: 'total_floating_population', nullable: true })
+  @Column({
+    type: 'integer',
+    name: 'total_floating_population',
+    nullable: true,
+  })
   totalFloatingPopulation: number | null;
 
-  @Column({ type: 'numeric', precision: 6, scale: 4, name: 'age_20_ratio', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 6,
+    scale: 4,
+    name: 'age_20_ratio',
+    nullable: true,
+  })
   age20Ratio: string | null;
 
-  @Column({ type: 'numeric', precision: 6, scale: 4, name: 'age_30_ratio', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 6,
+    scale: 4,
+    name: 'age_30_ratio',
+    nullable: true,
+  })
   age30Ratio: string | null;
 
-  @Column({ type: 'numeric', precision: 14, scale: 2, name: 'avg_rent_per_sqm', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    name: 'avg_rent_per_sqm',
+    nullable: true,
+  })
   avgRentPerSqm: string | null;
 
-  @Column({ type: 'numeric', precision: 5, scale: 2, name: 'vacancy_rate', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    name: 'vacancy_rate',
+    nullable: true,
+  })
   vacancyRate: string | null;
 
   @Column({ type: 'integer', name: 'residential_population', nullable: true })

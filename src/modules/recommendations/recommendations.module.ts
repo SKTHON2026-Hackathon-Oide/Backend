@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RECOMMENDATION_AGENT } from './domain/ports/recommendation-agent.port';
 import { DeterministicRecommendationAgent } from './infrastructure/agents/deterministic-recommendation-agent';
 import { CodexCliRecommendationAgent } from './infrastructure/agents/codex-cli-recommendation-agent';
+import { EcsCodexRecommendationAgent } from './infrastructure/agents/ecs-codex-recommendation-agent';
 import { OpenAiResponsesRecommendationAgent } from './infrastructure/agents/openai-responses-recommendation-agent';
 import { SqlRecommendationEvidenceCollector } from './infrastructure/evidence/sql-recommendation-evidence.collector';
 import { RecommendationEvent } from './infrastructure/persistence/typeorm/entities/recommendation-event.entity';
@@ -32,6 +33,7 @@ import { RecommendationController } from './interfaces/http/recommendation.contr
     SqlRecommendationEvidenceCollector,
     DeterministicRecommendationAgent,
     CodexCliRecommendationAgent,
+    EcsCodexRecommendationAgent,
     OpenAiResponsesRecommendationAgent,
     {
       provide: RECOMMENDATION_AGENT,
@@ -39,19 +41,26 @@ import { RecommendationController } from './interfaces/http/recommendation.contr
         ConfigService,
         DeterministicRecommendationAgent,
         CodexCliRecommendationAgent,
+        EcsCodexRecommendationAgent,
         OpenAiResponsesRecommendationAgent,
       ],
       useFactory: (
         config: ConfigService,
         deterministicAgent: DeterministicRecommendationAgent,
         codexAgent: CodexCliRecommendationAgent,
+        ecsCodexAgent: EcsCodexRecommendationAgent,
         openAiAgent: OpenAiResponsesRecommendationAgent,
       ) => {
         const mode = config.get<string>(
           'RECOMMENDATION_AGENT_MODE',
           'deterministic',
         );
-        if (mode === 'codex') return codexAgent;
+        if (mode === 'codex') {
+          return config.get<string>('RECOMMENDATION_AGENT_RUNNER', 'local') ===
+            'ecs'
+            ? ecsCodexAgent
+            : codexAgent;
+        }
         if (mode === 'openai') return openAiAgent;
         return deterministicAgent;
       },

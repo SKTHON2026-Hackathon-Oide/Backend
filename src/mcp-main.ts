@@ -68,6 +68,10 @@ async function bootstrap(): Promise<void> {
   const collector = new SqlRecommendationEvidenceCollector(dataSource);
   const app = createMcpExpressApp();
 
+  app.get('/health', (_request, response) => {
+    response.status(200).json({ status: 'ok' });
+  });
+
   app.post('/mcp', async (request, response) => {
     const server = createServer(collector);
     const transport = new StreamableHTTPServerTransport({

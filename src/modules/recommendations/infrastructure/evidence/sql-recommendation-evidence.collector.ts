@@ -23,6 +23,7 @@ type CommercialAreaRow = {
   name: string;
   type: string | null;
   overlap_ratio: string | null;
+  distance_meters: string | null;
   relation: 'DIRECT' | 'SPATIAL_FALLBACK';
 };
 
@@ -169,6 +170,7 @@ export class SqlRecommendationEvidenceCollector {
          ca.commercial_area_name AS name,
          ca.commercial_area_type AS type,
          cab.overlap_ratio::text AS overlap_ratio,
+         NULL::numeric AS distance_meters,
          'DIRECT'::text AS relation
        FROM commercial_area_building cab
        JOIN commercial_area ca ON ca.id = cab.commercial_area_id
@@ -186,6 +188,7 @@ export class SqlRecommendationEvidenceCollector {
            ca.commercial_area_name AS name,
            ca.commercial_area_type AS type,
            NULL::numeric AS overlap_ratio,
+           ST_Distance(ca.geom, b.geom)::text AS distance_meters,
            'SPATIAL_FALLBACK'::text AS relation
          FROM commercial_area ca
          JOIN building b ON b.id = $1
@@ -208,6 +211,7 @@ export class SqlRecommendationEvidenceCollector {
         name: area.name,
         type: area.type,
         overlapRatio: toNumber(area.overlap_ratio),
+        distanceMeters: toNumber(area.distance_meters),
         relation: area.relation,
       })),
       evidenceId: `ev_${requestId}_location`,

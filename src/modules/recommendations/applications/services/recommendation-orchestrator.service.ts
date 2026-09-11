@@ -25,6 +25,7 @@ import {
   SCORE_WEIGHTS,
 } from '../../domain/recommendation.types';
 import { SqlRecommendationEvidenceCollector } from '../../infrastructure/evidence/sql-recommendation-evidence.collector';
+import { DeterministicRecommendationAgent } from '../../infrastructure/agents/deterministic-recommendation-agent';
 import { RecommendationEvidenceSnapshot } from '../../infrastructure/persistence/typeorm/entities/recommendation-evidence-snapshot.entity';
 import { RecommendationRequest } from '../../infrastructure/persistence/typeorm/entities/recommendation-request.entity';
 import { SpaceBusinessRecommendationResult } from '../../infrastructure/persistence/typeorm/entities/space-business-recommendation-result.entity';
@@ -43,6 +44,7 @@ export class RecommendationOrchestratorService implements OnModuleInit {
     private readonly dataSource: DataSource,
     private readonly config: ConfigService,
     private readonly collector: SqlRecommendationEvidenceCollector,
+    private readonly deterministicAgent: DeterministicRecommendationAgent,
     private readonly eventService: RecommendationEventService,
     @Inject(RECOMMENDATION_AGENT)
     private readonly agent: RecommendationAgentPort,
@@ -193,6 +195,7 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         requestId,
         buildingId: claimed.buildingId,
       });
+      this.applyServerScores(output, packet);
 
       await this.publishProgress(
         requestId,
@@ -370,13 +373,40 @@ export class RecommendationOrchestratorService implements OnModuleInit {
     const candidates = new Set(
       packet.commerce.candidates.map((candidate) => candidate.code),
     );
-    const evidenceIds = new Set([
-      packet.building.evidenceId,
-      packet.commerce.evidenceId,
-      packet.population.evidenceId,
-      ...packet.commerce.candidates.map((candidate) => candidate.evidenceId),
-      ...packet.profiles.map((profile) => profile.evidenceId),
-    ]);
+    const linkedAreas = packet.building.commercialAreas;
+    const selectedArea = output.selectedCommercialArea;
+    const expectedArea = linkedAreas[0];
+    if (!expectedArea) {
+      if (
+        selectedArea.code !== null ||
+        selectedArea.name !== null ||
+        selectedArea.matchMethod !== null ||
+        selectedArea.overlapRatio !== null ||
+        selectedArea.distanceMeters !== null
+      ) {
+        throw new RecommendationFlowError(
+          'RESULT_VALIDATION_FAILED',
+          '연결 상권이 없는데 선택 상권이 반환되었습니다.',
+          500,
+        );
+      }
+    } else {
+      const expectedMethod =
+        expectedArea.relation === 'DIRECT' ? 'OVERLAP' : 'NEAREST';
+      if (
+        selectedArea.code !== expectedArea.code ||
+        selectedArea.name !== expectedArea.name ||
+        selectedArea.matchMethod !== expectedMethod ||
+        selectedArea.overlapRatio !== expectedArea.overlapRatio ||
+        selectedArea.distanceMeters !== (expectedArea.distanceMeters ?? null)
+      ) {
+        throw new RecommendationFlowError(
+          'RESULT_VALIDATION_FAILED',
+          '선택 상권 또는 연결 근거가 입력 데이터와 일치하지 않습니다.',
+          500,
+        );
+      }
+    }
     output.recommendations.forEach((recommendation, index) => {
       if (
         recommendation.rank !== index + 1 ||
@@ -388,32 +418,29 @@ export class RecommendationOrchestratorService implements OnModuleInit {
           500,
         );
       }
-      const breakdown = recommendation.scoreBreakdown;
-      const expected =
-        (breakdown.demand * SCORE_WEIGHTS.demand +
-          breakdown.supplyOpportunity * SCORE_WEIGHTS.supplyOpportunity +
-          breakdown.customerFit * SCORE_WEIGHTS.customerFit +
-          breakdown.timeFit * SCORE_WEIGHTS.timeFit +
-          breakdown.competitionHealth * SCORE_WEIGHTS.competitionHealth +
-          breakdown.dataConfidence * SCORE_WEIGHTS.dataConfidence) /
-        100;
       if (
-        Object.values(breakdown).some((value) => value < 0 || value > 100) ||
-        Math.abs(expected - recommendation.totalScore) > 0.1
+        recommendation.confidence < 0 ||
+        recommendation.confidence > 1 ||
+        (recommendation.totalScore !== null &&
+          (recommendation.totalScore < 0 || recommendation.totalScore > 100))
       ) {
         throw new RecommendationFlowError(
           'RESULT_VALIDATION_FAILED',
-          '추천 점수 산식 검증에 실패했습니다.',
+          '추천 confidence 또는 점수 범위 검증에 실패했습니다.',
           500,
         );
       }
-      if (recommendation.evidenceIds.some((id) => !evidenceIds.has(id))) {
-        throw new RecommendationFlowError(
-          'RESULT_VALIDATION_FAILED',
-          '추천 근거 ID가 수집된 근거와 일치하지 않습니다.',
-          500,
-        );
-      }
+    });
+  }
+
+  private applyServerScores(
+    output: RecommendationAgentOutput,
+    packet: RecommendationEvidencePacket,
+  ): void {
+    const scores = this.deterministicAgent.getServerScores(packet);
+    output.recommendations.forEach((recommendation) => {
+      recommendation.totalScore =
+        scores.get(recommendation.businessCategoryCode) ?? null;
     });
   }
 
@@ -435,12 +462,10 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         },
       },
       summary: output.summary,
+      selectedCommercialArea: output.selectedCommercialArea,
       recommendations: output.recommendations,
-      topOperatingTimeBands: packet.population.timeBands
-        .filter((band) => band.population !== null)
-        .slice(0, 5),
-      dataAsOf: packet.dataAsOf,
-      missingData: packet.missingData,
+      warnings: output.warnings,
+      dataLimitations: output.dataLimitations,
       methodologyVersion: RECOMMENDATION_METHODOLOGY_VERSION,
       promptVersion: RECOMMENDATION_PROMPT_VERSION,
       agentMode: this.config.get<string>(
@@ -466,15 +491,20 @@ export class RecommendationOrchestratorService implements OnModuleInit {
           businessCategoryCode: recommendation.businessCategoryCode,
           businessCategoryName: recommendation.businessCategoryName,
           rank: recommendation.rank,
-          totalScore: recommendation.totalScore.toFixed(2),
-          scoreBreakdown: recommendation.scoreBreakdown as unknown as Record<
-            string,
-            unknown
-          >,
-          recommendedOperatingHours: recommendation.recommendedOperatingHours,
-          reasons: recommendation.reasons,
+          totalScore:
+            recommendation.totalScore === null
+              ? null
+              : recommendation.totalScore.toFixed(2),
+          scoreBreakdown: {
+            confidence: recommendation.confidence,
+          },
+          recommendedOperatingHours: recommendation.operatingTips,
+          reasons: [
+            recommendation.oneLineReason,
+            ...recommendation.evidence.map((item) => item.interpretation),
+          ],
           risks: recommendation.risks,
-          evidenceIds: recommendation.evidenceIds,
+          evidenceIds: [],
         }),
       );
       await manager.save(resultEntities);
@@ -512,11 +542,16 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         names.get(recommendation.businessCategoryCode) ??
         recommendation.businessCategoryName;
     });
-    output.dataAsOf = packet.dataAsOf;
-    output.missingData = packet.missingData;
-    output.topOperatingTimeBands = packet.population.timeBands
-      .filter((band) => band.population !== null)
-      .slice(0, 5);
+    const missingWarnings = packet.missingData.map(
+      (missing) => `${missing.key}: ${missing.reason}`,
+    );
+    output.warnings = [...new Set([...output.warnings, ...missingWarnings])];
+    output.dataLimitations = [
+      ...new Set([
+        ...output.dataLimitations,
+        ...packet.missingData.map((missing) => missing.reason),
+      ]),
+    ];
   }
 
   private async publishToolStarted(requestId: string): Promise<void> {
@@ -686,6 +721,14 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         code: 'RECOMMENDATION_AGENT_NOT_CONFIGURED',
         message: 'AI 추천 에이전트 설정이 완료되지 않았습니다.',
         retryable: false,
+      };
+    }
+    if (error instanceof Error && error.name === 'CODEX_AGENT_RUNNER_ERROR') {
+      return {
+        code: 'CODEX_AGENT_RUNNER_ERROR',
+        message:
+          'Codex 작업 컨테이너 실행에 실패했습니다. 서버 로그를 확인하세요.',
+        retryable: true,
       };
     }
     if (error instanceof Error && error.name === 'INVALID_MODEL_OUTPUT') {

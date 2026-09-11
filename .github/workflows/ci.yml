@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run build
+      - name: Verify container builds
+        run: |
+          docker build -t skthon-backend-ci:${{ github.sha }} .
+          docker build -t skthon-mcp-ci:${{ github.sha }} -f infra/ai/mcp/Dockerfile .
+          docker build -t skthon-codex-agent-ci:${{ github.sha }} -f infra/ai/codex-agent/Dockerfile .

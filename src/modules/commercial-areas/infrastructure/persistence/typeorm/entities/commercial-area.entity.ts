@@ -9,13 +9,23 @@ export class CommercialArea {
   })
   id: string;
 
-  @Column({ type: 'varchar', length: 30, name: 'commercial_area_code', unique: true })
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'commercial_area_code',
+    unique: true,
+  })
   commercialAreaCode: string;
 
   @Column({ type: 'varchar', length: 150, name: 'commercial_area_name' })
   commercialAreaName: string;
 
-  @Column({ type: 'varchar', length: 50, name: 'commercial_area_type', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 50,
+    name: 'commercial_area_type',
+    nullable: true,
+  })
   commercialAreaType: string | null;
 
   @Index('commercial_area_geom_gix', { spatial: true })

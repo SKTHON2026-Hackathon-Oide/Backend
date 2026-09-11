@@ -32,13 +32,25 @@ export class SalesStatistic {
   @Column({ type: 'date', name: 'base_period' })
   basePeriod: string;
 
-  @Column({ type: 'numeric', precision: 18, scale: 2, name: 'estimated_sales_amount', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 18,
+    scale: 2,
+    name: 'estimated_sales_amount',
+    nullable: true,
+  })
   estimatedSalesAmount: string | null;
 
   @Column({ type: 'bigint', name: 'transaction_count', nullable: true })
   transactionCount: string | null;
 
-  @Column({ type: 'numeric', precision: 18, scale: 2, name: 'average_transaction_amount', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 18,
+    scale: 2,
+    name: 'average_transaction_amount',
+    nullable: true,
+  })
   averageTransactionAmount: string | null;
 
   @Column({ type: 'integer', name: 'store_count', nullable: true })

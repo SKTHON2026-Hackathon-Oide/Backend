@@ -86,11 +86,33 @@ curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/spa
 로컬 Codex 작업 컨테이너를 사용할 때는 `RECOMMENDATION_AGENT_MODE=codex`와
 `OPENAI_API_KEY`를 설정한다. `npm run start:dev`는 로컬 MCP 서버를 Docker로 먼저
 기동한 뒤 Nest API를 시작한다. 분석 요청마다 API는 일회성 `codex-agent` 컨테이너를
-실행하고, 이 컨테이너는 Docker 내부 네트워크의 `mcp` 서비스에 접속한다.
+실행하고, 이 컨테이너는 Docker 내부 네트워크의 `mcp` 서비스에 접속한다. 완료된
+작업 컨테이너는 기본적으로 삭제하지 않으므로 Docker Desktop에서 이름이
+`recommendation-codex-<requestId>-...`인 컨테이너의 로그를 확인할 수 있다. 자동
+삭제가 필요하면 `CODEX_AGENT_REMOVE_CONTAINER=true`를 설정한다.
+
+이미지는 공개 인증서를 신뢰하도록 표준 CA 번들을 설치한다. 그래도 사내 TLS 프록시가
+OpenAI 인증서를 재서명하는 네트워크에서는, 신뢰할 수 있는 사내 루트 CA PEM 번들을
+Base64로 변환해 `CODEX_CA_CERTIFICATE_BASE64`에 설정한다. 이 값은 컨테이너 실행
+시에만 임시 PEM 파일로 복원되며, `CODEX_CA_CERTIFICATE`로 Codex에 전달된다.
+
+```bash
+# CA PEM 원본은 저장소에 넣지 않는다.
+base64 < /secure/path/corporate-root-ca.pem | tr -d '\\n'
+
+# backend/.env에 위 결과를 한 줄로 설정
+CODEX_CA_CERTIFICATE_BASE64=<base64-pem-bundle>
+```
 
 `OPENAI_API_KEY`는 이미지나 저장소에 보관하지 않고, 요청 시 `docker compose run -e`
 환경변수로만 Codex 컨테이너에 전달한다. MCP는 기본적으로 호스트의 PostGIS 포트에
 `host.docker.internal`로 접속하므로 로컬 DB를 먼저 실행해야 한다.
+
+`401 Unauthorized`가 컨테이너 로그에 나타나면 TLS나 MCP 문제가 아니라
+`OPENAI_API_KEY` 인증 실패다. Codex 컨테이너는 호스트의 Codex Desktop 로그인 정보를
+공유하지 않으므로, 시작 시 환경변수의 키로 `codex login --with-api-key`를 수행한다.
+OpenAI Platform에서 발급한 유효한 API 키를 `backend/.env`의 `OPENAI_API_KEY`에
+설정해야 한다. 키 값은 로그나 채팅에 붙여넣지 않는다.
 
 ```bash
 docker compose --env-file infra/databases/.env \\

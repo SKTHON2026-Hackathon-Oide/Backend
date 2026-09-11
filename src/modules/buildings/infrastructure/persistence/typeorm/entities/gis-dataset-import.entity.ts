@@ -20,7 +20,12 @@ export class GisDatasetImport {
   @Column({ type: 'timestamp', name: 'imported_at', default: () => 'now()' })
   importedAt: Date;
 
-  @Column({ type: 'varchar', length: 30, name: 'source_crs', default: 'EPSG:5186' })
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'source_crs',
+    default: 'EPSG:5186',
+  })
   sourceCrs: string;
 
   @Column({ type: 'integer', name: 'record_count', nullable: true })

@@ -1,0 +1,115 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: skthon-dev-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ENVIRONMENT: dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run build
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
+          BACKEND_RUNTIME_SECRET_ID: ${{ vars.BACKEND_RUNTIME_SECRET_ID }}
+          MCP_RUNTIME_SECRET_ID: ${{ vars.MCP_RUNTIME_SECRET_ID }}
+        run: |
+          test -n "$AWS_REGION"
+          test -n "$DEPLOY_ROLE"
+          test -n "$OPENAI_SECRET_ARN"
+          test -n "$BACKEND_RUNTIME_SECRET_ID"
+          test -n "$MCP_RUNTIME_SECRET_ID"
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: skthon-dev-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Build and push immutable images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/skthon/dev/backend:$TAG" .
+          docker build -t "$REGISTRY/skthon/dev/mcp:$TAG" -f infra/ai/mcp/Dockerfile .
+          docker build -t "$REGISTRY/skthon/dev/codex-agent:$TAG" -f infra/ai/codex-agent/Dockerfile .
+          docker push "$REGISTRY/skthon/dev/backend:$TAG"
+          docker push "$REGISTRY/skthon/dev/mcp:$TAG"
+          docker push "$REGISTRY/skthon/dev/codex-agent:$TAG"
+      - name: Register the Codex Fargate task revision
+        id: agent
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+          OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
+        run: |
+          export IMAGE_URI="$REGISTRY/skthon/dev/codex-agent:$TAG"
+          export MCP_SERVER_URL="$(aws ssm get-parameter --name /skthon/dev/config/mcp-server-url --query 'Parameter.Value' --output text)"
+          export TASK_EXECUTION_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name skthon-dev-compute --query 'Stacks[0].Outputs[?OutputKey==`CodexTaskExecutionRoleArn`].OutputValue | [0]' --output text)"
+          export TASK_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name skthon-dev-compute --query 'Stacks[0].Outputs[?OutputKey==`CodexTaskRoleArn`].OutputValue | [0]' --output text)"
+          export LOG_GROUP=/skthon/dev/codex-agent
+          task_arn="$(infra/aws/scripts/register-agent-task.sh)"
+          aws ssm put-parameter --name /skthon/dev/config/ecs-task-definition-arn --type String --value "$task_arn" --overwrite
+          echo "task_arn=$task_arn" >> "$GITHUB_OUTPUT"
+      - name: Deploy MCP then backend through SSM
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+          BACKEND_RUNTIME_SECRET_ID: ${{ vars.BACKEND_RUNTIME_SECRET_ID }}
+          MCP_RUNTIME_SECRET_ID: ${{ vars.MCP_RUNTIME_SECRET_ID }}
+        run: |
+          run_remote() {
+            local instance_id="$1"
+            local service_name="$2"
+            local image_uri="$3"
+            local secret_id="$4"
+            local kind="$5"
+            local script command parameters command_id status
+            script="$(base64 -w 0 infra/aws/scripts/deploy-ec2-service.sh)"
+            command="echo '$script' | base64 -d >/tmp/skthon-deploy; chmod 700 /tmp/skthon-deploy; AWS_REGION='$AWS_REGION' SERVICE_NAME='$service_name' IMAGE_URI='$image_uri' RUNTIME_SECRET_ID='$secret_id' SERVICE_KIND='$kind' /tmp/skthon-deploy"
+            parameters="$(jq -cn --arg command "$command" '{commands:[$command]}')"
+            command_id="$(aws ssm send-command --instance-ids "$instance_id" --document-name AWS-RunShellScript --parameters "$parameters" --query 'Command.CommandId' --output text)"
+            for _ in $(seq 1 60); do
+              sleep 5
+              status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --query Status --output text 2>/dev/null || true)"
+              case "$status" in
+                Success) return 0 ;;
+                Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance_id" --output json; return 1 ;;
+              esac
+            done
+            echo "SSM deployment timed out: $command_id" >&2
+            return 1
+          }
+          mcp_instance="$(aws cloudformation describe-stacks --stack-name skthon-dev-compute --query 'Stacks[0].Outputs[?OutputKey==`McpInstanceId`].OutputValue | [0]' --output text)"
+          backend_instance="$(aws cloudformation describe-stacks --stack-name skthon-dev-compute --query 'Stacks[0].Outputs[?OutputKey==`BackendInstanceId`].OutputValue | [0]' --output text)"
+          run_remote "$mcp_instance" skthon-mcp "$REGISTRY/skthon/dev/mcp:$TAG" "$MCP_RUNTIME_SECRET_ID" mcp
+          run_remote "$backend_instance" skthon-backend "$REGISTRY/skthon/dev/backend:$TAG" "$BACKEND_RUNTIME_SECRET_ID" backend
+      - name: Smoke test backend
+        run: |
+          backend_ip="$(aws cloudformation describe-stacks --stack-name skthon-dev-compute --query 'Stacks[0].Outputs[?OutputKey==`BackendElasticIp`].OutputValue | [0]' --output text)"
+          curl --fail --retry 5 --retry-delay 2 "http://$backend_ip/api/health"

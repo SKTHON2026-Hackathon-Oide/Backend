@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SKTHON EC2 and ECS compute resources. Existing RDS is reference-only.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  BackendSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  McpSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  FargateSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  ExistingRdsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Existing RDS SG; it is attached to EC2 instances but never modified by this stack.
+  ExistingRdsEndpoint:
+    Type: String
+  ExistingRdsPort:
+    Type: Number
+    Default: 5432
+  ExistingRdsDatabase:
+    Type: String
+    Default: postgres
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  InstanceType:
+    Type: String
+    Default: t3.small
+
+Resources:
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTP entry for SKTHON backend
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub skthon-${Environment}-backend
+
+  AgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: No inbound access; outbound used by one-off Codex tasks
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub skthon-${Environment}-codex-agent
+
+  McpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MCP accepts traffic only from Codex Fargate tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3001
+          ToPort: 3001
+          SourceSecurityGroupId: !Ref AgentSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub skthon-${Environment}-mcp
+
+  BackendRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub skthon-${Environment}-backend
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: run-codex-tasks
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ecs:RunTask, ecs:DescribeTasks, ecs:StopTask]
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt CodexTaskExecutionRole.Arn
+                  - !GetAtt CodexTaskRole.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub arn:${AWS::Partition}:s3:::skthon-${Environment}-${AWS::AccountId}-${AWS::Region}-codex-jobs/jobs/*
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/skthon/${Environment}/config/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:skthon/${Environment}/*
+
+  McpRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub skthon-${Environment}-mcp
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: runtime-configuration
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/skthon/${Environment}/config/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:skthon/${Environment}/*
+
+  CodexTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub skthon-${Environment}-codex-task-execution
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-openai-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:skthon/${Environment}/openai-api-key-*
+
+  CodexTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub skthon-${Environment}-codex-task
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: job-artifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub arn:${AWS::Partition}:s3:::skthon-${Environment}-${AWS::AccountId}-${AWS::Region}-codex-jobs/jobs/*
+
+  BackendInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref BackendRole]
+
+  McpInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref McpRole]
+
+  BackendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref BackendInstanceProfile
+      SubnetId: !Ref BackendSubnetId
+      SecurityGroupIds: [!Ref BackendSecurityGroup, !Ref ExistingRdsSecurityGroupId]
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeType: gp3, VolumeSize: 30, DeleteOnTermination: true, Encrypted: true }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf install -y docker amazon-ssm-agent
+          systemctl enable --now docker amazon-ssm-agent
+          mkdir -p /opt/skthon
+      Tags:
+        - Key: Name
+          Value: !Sub skthon-${Environment}-backend
+        - Key: Project
+          Value: skthon
+        - Key: Environment
+          Value: !Ref Environment
+
+  BackendElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BackendInstance
+
+  McpInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref McpInstanceProfile
+      SubnetId: !Ref McpSubnetId
+      SecurityGroupIds: [!Ref McpSecurityGroup, !Ref ExistingRdsSecurityGroupId]
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs: { VolumeType: gp3, VolumeSize: 20, DeleteOnTermination: true, Encrypted: true }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          dnf install -y docker amazon-ssm-agent
+          systemctl enable --now docker amazon-ssm-agent
+          mkdir -p /opt/skthon
+      Tags:
+        - Key: Name
+          Value: !Sub skthon-${Environment}-mcp
+        - Key: Project
+          Value: skthon
+        - Key: Environment
+          Value: !Ref Environment
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub skthon-${Environment}
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  RdsEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/rds-endpoint
+      Type: String
+      Value: !Ref ExistingRdsEndpoint
+
+  RdsPortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/rds-port
+      Type: String
+      Value: !Ref ExistingRdsPort
+
+  RdsDatabaseParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/rds-database
+      Type: String
+      Value: !Ref ExistingRdsDatabase
+
+  McpUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/mcp-server-url
+      Type: String
+      Value: !Sub http://${McpInstance.PrivateIp}:3001/mcp
+
+  JobBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/jobs-bucket
+      Type: String
+      Value: !Sub skthon-${Environment}-${AWS::AccountId}-${AWS::Region}-codex-jobs
+
+  EcsClusterParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/ecs-cluster
+      Type: String
+      Value: !Ref EcsCluster
+
+  FargateSubnetParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/ecs-task-subnet-ids
+      Type: String
+      Value: !Ref FargateSubnetId
+
+  FargateSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /skthon/${Environment}/config/ecs-task-security-group-ids
+      Type: String
+      Value: !Ref AgentSecurityGroup
+
+Outputs:
+  BackendInstanceId: { Value: !Ref BackendInstance }
+  BackendElasticIp: { Value: !Ref BackendElasticIp }
+  McpInstanceId: { Value: !Ref McpInstance }
+  McpPrivateIp: { Value: !GetAtt McpInstance.PrivateIp }
+  EcsClusterName: { Value: !Ref EcsCluster }
+  AgentSecurityGroupId: { Value: !Ref AgentSecurityGroup }
+  BackendRoleArn: { Value: !GetAtt BackendRole.Arn }
+  CodexTaskExecutionRoleArn: { Value: !GetAtt CodexTaskExecutionRole.Arn }
+  CodexTaskRoleArn: { Value: !GetAtt CodexTaskRole.Arn }

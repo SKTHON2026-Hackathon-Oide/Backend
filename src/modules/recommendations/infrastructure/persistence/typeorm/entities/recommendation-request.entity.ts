@@ -70,7 +70,7 @@ export class RecommendationRequest {
     type: 'varchar',
     length: 50,
     name: 'prompt_version',
-    default: 'location-business-agent-v1',
+    default: 'location-business-agent-v2',
   })
   promptVersion: string;
 

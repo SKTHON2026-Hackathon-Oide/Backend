@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
-  AgentRecommendation,
   BusinessProfileEvidence,
   CommerceCandidateEvidence,
   PopulationBand,
+  RecommendationEvidence,
   RecommendationAgentOutput,
   RecommendationEvidencePacket,
   ScoreBreakdown,
@@ -34,8 +34,36 @@ const timeRangeToBand = (range: string): string | null => {
   return mappings[range] ?? (range.includes('-') ? range : null);
 };
 
+interface ScoredCandidate {
+  rank: number;
+  businessCategoryCode: string;
+  businessCategoryName: string;
+  totalScore: number;
+  scoreBreakdown: ScoreBreakdown;
+  recommendedOperatingHours: string[];
+  reasons: string[];
+  risks: string[];
+  evidenceIds: string[];
+}
+
 @Injectable()
 export class DeterministicRecommendationAgent implements RecommendationAgentPort {
+  getServerScores(packet: RecommendationEvidencePacket): Map<string, number> {
+    const profileByCode = new Map(
+      packet.profiles.map((profile) => [profile.code, profile]),
+    );
+    return new Map(
+      packet.commerce.candidates.map((candidate) => [
+        candidate.code,
+        this.scoreCandidate(
+          candidate,
+          profileByCode.get(candidate.code),
+          packet,
+        ).totalScore,
+      ]),
+    );
+  }
+
   generate(
     packet: RecommendationEvidencePacket,
   ): Promise<RecommendationAgentOutput> {
@@ -64,20 +92,18 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
           right.businessCategoryCode,
         );
       })
-      .slice(0, 5)
-      .map((recommendation, index) => ({
-        ...recommendation,
-        rank: index + 1,
-      }));
+      .slice(0, 5);
 
     return Promise.resolve({
       summary: `${packet.building.address ?? '대상 건물'} 주변 상권·유동인구 통계를 기준으로 ${scored.length}개 업종을 비교했습니다.`,
-      recommendations: scored,
-      topOperatingTimeBands: packet.population.timeBands
-        .filter((band) => band.population !== null)
-        .slice(0, 5),
-      dataAsOf: packet.dataAsOf,
-      missingData: packet.missingData,
+      selectedCommercialArea: this.selectedCommercialArea(packet),
+      recommendations: scored.map((candidate, index) =>
+        this.toRecommendation(candidate, index + 1, packet),
+      ),
+      warnings: packet.missingData.map(
+        (missing) => `${missing.key}: ${missing.reason}`,
+      ),
+      dataLimitations: packet.missingData.map((missing) => missing.reason),
     });
   }
 
@@ -85,7 +111,7 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
     candidate: CommerceCandidateEvidence,
     profile: BusinessProfileEvidence | undefined,
     packet: RecommendationEvidencePacket,
-  ): AgentRecommendation {
+  ): ScoredCandidate {
     const demand = clamp(
       candidate.demandScore ??
         average([
@@ -170,6 +196,131 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
           : ['업종 profile 결측으로 고객층·시간대 적합도 신뢰도가 낮습니다.']),
       ],
       evidenceIds,
+    };
+  }
+
+  private selectedCommercialArea(packet: RecommendationEvidencePacket): {
+    code: string | null;
+    name: string | null;
+    matchMethod: 'OVERLAP' | 'NEAREST' | null;
+    overlapRatio: number | null;
+    distanceMeters: number | null;
+  } {
+    const area = packet.building.commercialAreas[0];
+    if (!area) {
+      return {
+        code: null,
+        name: null,
+        matchMethod: null,
+        overlapRatio: null,
+        distanceMeters: null,
+      };
+    }
+    return {
+      code: area.code,
+      name: area.name,
+      matchMethod: area.relation === 'DIRECT' ? 'OVERLAP' : 'NEAREST',
+      overlapRatio: area.overlapRatio,
+      distanceMeters: area.distanceMeters ?? null,
+    };
+  }
+
+  private toRecommendation(
+    candidate: ScoredCandidate,
+    rank: number,
+    packet: RecommendationEvidencePacket,
+  ) {
+    const profile = packet.profiles.find(
+      (item) => item.code === candidate.businessCategoryCode,
+    );
+    const evidence: RecommendationEvidence[] = [
+      this.evidence(
+        'DEMAND',
+        'demandScore',
+        candidate.scoreBreakdown.demand,
+        'score',
+        packet.commerce.sourcePeriod,
+        `수요 점수 ${candidate.scoreBreakdown.demand}를 반영했습니다.`,
+      ),
+      this.evidence(
+        'COMPETITION',
+        'storeCount',
+        candidate.evidenceIds.length > 0
+          ? (packet.commerce.candidates.find(
+              (item) => item.code === candidate.businessCategoryCode,
+            )?.storeCount ?? null)
+          : null,
+        '개',
+        packet.commerce.sourcePeriod,
+        '상권 단위 업종 점포 수입니다.',
+      ),
+      this.evidence(
+        'POPULATION',
+        'totalPopulation',
+        packet.population.totalPopulation,
+        '명',
+        packet.population.sourcePeriod,
+        '연결 상권의 최신 유동인구 합계입니다.',
+      ),
+    ];
+    if (profile) {
+      evidence.push(
+        this.evidence(
+          'PROFILE',
+          'profileConfidence',
+          profile.confidenceLevel,
+          null,
+          'hackathon-v1',
+          `업종 프로필 신뢰도는 ${profile.confidenceLevel}입니다.`,
+        ),
+      );
+    }
+    if (candidate.risks.length > 0) {
+      evidence.push(
+        this.evidence(
+          'RISK',
+          'closureRate',
+          packet.commerce.candidates.find(
+            (item) => item.code === candidate.businessCategoryCode,
+          )?.closureRate ?? null,
+          '%',
+          packet.commerce.sourcePeriod,
+          candidate.risks[0],
+        ),
+      );
+    }
+    return {
+      rank,
+      businessCategoryCode: candidate.businessCategoryCode,
+      businessCategoryName: candidate.businessCategoryName,
+      totalScore: candidate.totalScore,
+      confidence: candidate.scoreBreakdown.dataConfidence / 100,
+      oneLineReason:
+        candidate.reasons[0] ?? '수집된 근거를 기준으로 비교했습니다.',
+      evidence,
+      risks: candidate.risks,
+      operatingTips: candidate.recommendedOperatingHours,
+    };
+  }
+
+  private evidence(
+    type: RecommendationEvidence['type'],
+    metric: string,
+    value: string | number | Record<string, unknown> | null,
+    unit: string | null,
+    sourcePeriod: string | null,
+    interpretation: string,
+  ): RecommendationEvidence {
+    const period = /^\d{4}-\d{2}-\d{2}$/.test(sourcePeriod ?? '')
+      ? { from: sourcePeriod, to: sourcePeriod }
+      : { from: null, to: null };
+    return {
+      type,
+      metric,
+      value,
+      unit,
+      statisticsPeriod: period,
+      interpretation,
     };
   }
 
