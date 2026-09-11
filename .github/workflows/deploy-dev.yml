@@ -55,12 +55,22 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           TAG: ${{ github.sha }}
         run: |
-          docker build -t "$REGISTRY/skthon/dev/backend:$TAG" .
-          docker build -t "$REGISTRY/skthon/dev/mcp:$TAG" -f infra/ai/mcp/Dockerfile .
-          docker build -t "$REGISTRY/skthon/dev/codex-agent:$TAG" -f infra/ai/codex-agent/Dockerfile .
-          docker push "$REGISTRY/skthon/dev/backend:$TAG"
-          docker push "$REGISTRY/skthon/dev/mcp:$TAG"
-          docker push "$REGISTRY/skthon/dev/codex-agent:$TAG"
+          build_and_push() {
+            local repository="$1"
+            shift
+
+            if aws ecr describe-images --repository-name "$repository" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+              echo "Reusing immutable image: $repository:$TAG"
+              return 0
+            fi
+
+            docker build -t "$REGISTRY/$repository:$TAG" "$@"
+            docker push "$REGISTRY/$repository:$TAG"
+          }
+
+          build_and_push skthon/dev/backend .
+          build_and_push skthon/dev/mcp -f infra/ai/mcp/Dockerfile .
+          build_and_push skthon/dev/codex-agent -f infra/ai/codex-agent/Dockerfile .
       - name: Register the Codex Fargate task revision
         id: agent
         env:
