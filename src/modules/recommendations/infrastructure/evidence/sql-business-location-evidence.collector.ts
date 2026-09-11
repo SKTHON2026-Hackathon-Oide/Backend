@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { parseProfileArray } from './profile-array';
 import {
   BusinessLocationCandidate,
   BusinessLocationEvidencePacket,
@@ -42,8 +43,8 @@ type PopulationRow = {
   time_21_24: string | null;
 };
 type ProfileRow = {
-  target_age_groups: string[] | null;
-  peak_time_ranges: string[] | null;
+  target_age_groups: unknown;
+  peak_time_ranges: unknown;
   confidence_level: string;
   profile_version: string;
 };
@@ -126,6 +127,8 @@ export class SqlBusinessLocationEvidenceCollector {
     `,
       [input.businessCategoryCode],
     );
+    const targetAgeGroups = parseProfileArray(profile?.target_age_groups);
+    const peakTimeRanges = parseProfileArray(profile?.peak_time_ranges);
     const populationById = new Map(
       populations.map((row) => [row.commercial_area_id, row]),
     );
@@ -159,8 +162,8 @@ export class SqlBusinessLocationEvidenceCollector {
         : [];
       const profileValue = profile
         ? {
-            targetAgeGroups: profile.target_age_groups ?? [],
-            peakTimeRanges: profile.peak_time_ranges ?? [],
+            targetAgeGroups: targetAgeGroups ?? [],
+            peakTimeRanges: peakTimeRanges ?? [],
             confidenceLevel: profile.confidence_level,
           }
         : null;
@@ -199,6 +202,23 @@ export class SqlBusinessLocationEvidenceCollector {
       };
     });
     const missingData = [
+      ...(profile && targetAgeGroups === null
+        ? [
+            {
+              key: 'targetAgeGroups',
+              reason:
+                '고객 연령대 프로필 형식이 잘못되어 평가에서 제외했습니다.',
+            },
+          ]
+        : []),
+      ...(profile && peakTimeRanges === null
+        ? [
+            {
+              key: 'peakTimeRanges',
+              reason: '주요 시간대 프로필이 손상되어 평가에서 제외했습니다.',
+            },
+          ]
+        : []),
       ...(candidates.some((candidate) => candidate.population.total === null)
         ? [
             {
