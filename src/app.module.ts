@@ -11,6 +11,7 @@ import { CommonModule } from './modules/common/common.module';
 import { HealthModule } from './modules/health/health.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
 import { StoresModule } from './modules/stores/stores.module';
+import { ReportFavoritesModule } from './modules/report-favorites/report-favorites.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { StoresModule } from './modules/stores/stores.module';
     StoresModule,
     AnalyticsModule,
     RecommendationsModule,
+    ReportFavoritesModule,
   ],
   controllers: [AppController],
 })

@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Reflector } from '@nestjs/core';
 import { clerkMiddleware } from '@clerk/express';
@@ -7,7 +8,9 @@ import { AppModule } from './app.module';
 import { ResponseInterceptor } from './modules/common/interceptors/response.interceptor';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // 3MB report plus JSON metadata; exact report size is checked by the service.
+  app.useBodyParser('json', { limit: '4mb' });
 
   const authorizedParties = (process.env.CLERK_AUTHORIZED_PARTIES ?? '')
     .split(',')
