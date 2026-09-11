@@ -122,9 +122,9 @@ export class OpenAiResponsesRecommendationAgent implements RecommendationAgentPo
     const mcpServerUrl = this.config.get<string>(
       'RECOMMENDATION_MCP_SERVER_URL',
     );
-    if (!apiKey || !mcpServerUrl || !context) {
+    if (!apiKey || !context) {
       const error = new Error(
-        'OpenAI agent는 OPENAI_API_KEY, RECOMMENDATION_MCP_SERVER_URL 설정이 필요합니다.',
+        'OpenAI agent는 OPENAI_API_KEY 설정이 필요합니다.',
       );
       error.name = 'RECOMMENDATION_AGENT_NOT_CONFIGURED';
       throw error;
@@ -133,6 +133,19 @@ export class OpenAiResponsesRecommendationAgent implements RecommendationAgentPo
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90_000);
     try {
+      const tools = mcpServerUrl
+        ? [
+            {
+              type: 'mcp',
+              server_label: this.config.get<string>(
+                'RECOMMENDATION_MCP_SERVER_LABEL',
+                'location-recommendation',
+              ),
+              server_url: mcpServerUrl,
+              require_approval: 'never',
+            },
+          ]
+        : undefined;
       const response = await fetch(
         `${this.config.get<string>('OPENAI_BASE_URL', 'https://api.openai.com/v1')}/responses`,
         {
@@ -151,17 +164,7 @@ export class OpenAiResponsesRecommendationAgent implements RecommendationAgentPo
               buildingId: context.buildingId,
               evidencePacket: packet,
             }),
-            tools: [
-              {
-                type: 'mcp',
-                server_label: this.config.get<string>(
-                  'RECOMMENDATION_MCP_SERVER_LABEL',
-                  'location-recommendation',
-                ),
-                server_url: mcpServerUrl,
-                require_approval: 'never',
-              },
-            ],
+            ...(tools ? { tools } : {}),
             text: {
               format: {
                 type: 'json_schema',
@@ -200,7 +203,7 @@ export class OpenAiResponsesRecommendationAgent implements RecommendationAgentPo
   private instructions(): string {
     return `
 당신은 서울시 건물 위치 기반 업종 추천 에이전트다.
-MCP 도구와 입력 evidence packet의 실제 데이터만 사용한다. MCP가 반환하지 않은
+입력 evidence packet과 MCP 도구가 제공하는 실제 데이터만 사용한다. MCP가 제공되지 않은
 업종·수치·상권을 만들어내지 말고 결측은 0으로 바꾸지 않는다. 후보 업종 집합 안에서만
 최대 5개를 선택한다. 층·면적·임대료·공실 여부를 알고 있다고 주장하지 않는다.
 

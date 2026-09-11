@@ -83,8 +83,10 @@ curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/spa
 건물 ID만으로 주변 상권·점포·성별·연령대·시간대 유동인구를 수집해 업종 TOP 5와
 영업시간을 분석한다. 요청은 즉시 `202 Accepted`로 반환되고, SSE로 진행 상황을
 구독한다. 현재 기본 agent mode는 외부 연동 없이 검증 가능한 `deterministic`이며,
-OpenAI 원격 MCP를 사용할 때는 `.env`에서 `RECOMMENDATION_AGENT_MODE=openai`,
-`OPENAI_API_KEY`, `RECOMMENDATION_MCP_SERVER_URL`을 설정한다.
+OpenAI 분석을 사용할 때는 `.env`에서 `RECOMMENDATION_AGENT_MODE=openai`와
+`OPENAI_API_KEY`를 설정한다. `RECOMMENDATION_MCP_SERVER_URL`은 선택 사항이며,
+설정하면 AI가 원격 MCP 도구도 추가로 사용할 수 있다. 설정하지 않아도 백엔드가
+수집한 evidence packet만으로 분석한다.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/buildings/<buildingId>/recommendation-requests \
