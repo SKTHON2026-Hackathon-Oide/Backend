@@ -1,4 +1,4 @@
-export const RECOMMENDATION_PROMPT_VERSION = 'location-business-agent-v2';
+export const RECOMMENDATION_PROMPT_VERSION = 'location-business-agent-v3';
 export const RECOMMENDATION_METHODOLOGY_VERSION = 'location-business-score-v1';
 export const RECOMMENDATION_PROFILE_VERSION = 'hackathon-v1';
 
@@ -118,6 +118,36 @@ export interface ScoreBreakdown {
   dataConfidence: number;
 }
 
+export type RecommendationChartSelectionType =
+  | 'POPULATION_BY_TIME'
+  | 'POPULATION_BY_AGE'
+  | 'POPULATION_BY_DAY'
+  | 'BUSINESS_COMPARISON';
+
+export interface RecommendationChartSelection {
+  type: RecommendationChartSelectionType;
+  reason: string;
+}
+
+export interface RecommendationChartSeries {
+  name: string;
+  values: Array<number | null>;
+}
+
+export interface RecommendationChart {
+  id: string;
+  type: 'BAR';
+  title: string;
+  description: string;
+  unit: string;
+  categories: string[];
+  series: RecommendationChartSeries[];
+  statisticsPeriod: {
+    from: string | null;
+    to: string | null;
+  };
+}
+
 export interface AgentRecommendation {
   rank: number;
   businessCategoryCode: string;
@@ -128,6 +158,8 @@ export interface AgentRecommendation {
   evidence: RecommendationEvidence[];
   risks: string[];
   operatingTips: string[];
+  chartSelections?: RecommendationChartSelection[];
+  charts?: RecommendationChart[];
 }
 
 export type RecommendationEvidenceType =

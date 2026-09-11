@@ -18,6 +18,8 @@ import type {
 import {
   RECOMMENDATION_METHODOLOGY_VERSION,
   RECOMMENDATION_PROMPT_VERSION,
+  RecommendationChart,
+  RecommendationChartSelection,
   RecommendationAgentOutput,
   RecommendationEvidencePacket,
   RecommendationStage,
@@ -196,6 +198,7 @@ export class RecommendationOrchestratorService implements OnModuleInit {
         buildingId: claimed.buildingId,
       });
       this.applyServerScores(output, packet);
+      this.attachCharts(output, packet);
 
       await this.publishProgress(
         requestId,
@@ -463,7 +466,11 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       },
       summary: output.summary,
       selectedCommercialArea: output.selectedCommercialArea,
-      recommendations: output.recommendations,
+      recommendations: output.recommendations.map((recommendation) => {
+        const publicRecommendation = { ...recommendation };
+        delete publicRecommendation.chartSelections;
+        return publicRecommendation;
+      }),
       warnings: output.warnings,
       dataLimitations: output.dataLimitations,
       methodologyVersion: RECOMMENDATION_METHODOLOGY_VERSION,
@@ -541,17 +548,272 @@ export class RecommendationOrchestratorService implements OnModuleInit {
       recommendation.businessCategoryName =
         names.get(recommendation.businessCategoryCode) ??
         recommendation.businessCategoryName;
+      recommendation.oneLineReason = this.sanitizeDisplayText(
+        recommendation.oneLineReason,
+      );
+      recommendation.risks = recommendation.risks.map((risk) =>
+        this.sanitizeDisplayText(risk),
+      );
+      recommendation.operatingTips = recommendation.operatingTips.map((tip) =>
+        this.sanitizeDisplayText(tip),
+      );
+      recommendation.evidence = recommendation.evidence.map((evidence) => ({
+        ...evidence,
+        metric: this.displayMetric(evidence.metric),
+        interpretation: this.sanitizeDisplayText(evidence.interpretation),
+        statisticsPeriod:
+          evidence.statisticsPeriod.from === 'hackathon-v1' ||
+          evidence.statisticsPeriod.to === 'hackathon-v1'
+            ? { from: null, to: null }
+            : evidence.statisticsPeriod,
+      }));
     });
-    const missingWarnings = packet.missingData.map(
-      (missing) => `${missing.key}: ${missing.reason}`,
+    output.summary = this.sanitizeDisplayText(output.summary);
+    output.warnings = output.warnings.map((warning) =>
+      this.sanitizeDisplayText(warning),
+    );
+    output.dataLimitations = output.dataLimitations.map((limitation) =>
+      this.sanitizeDisplayText(limitation),
+    );
+    const missingWarnings = packet.missingData.map((missing) =>
+      this.sanitizeDisplayText(`${missing.key}: ${missing.reason}`),
     );
     output.warnings = [...new Set([...output.warnings, ...missingWarnings])];
     output.dataLimitations = [
       ...new Set([
         ...output.dataLimitations,
-        ...packet.missingData.map((missing) => missing.reason),
+        ...packet.missingData.map((missing) =>
+          this.sanitizeDisplayText(missing.reason),
+        ),
       ]),
     ];
+  }
+
+  private displayMetric(metric: string): string {
+    const labels: Record<string, string> = {
+      demandScore: '수요 적합도',
+      competitionScore: '경쟁 강도',
+      estimatedSalesAmount: '상권 추정 매출',
+      storeCount: '동종 업종 점포 수',
+      nearbyStoreCount: '반경 내 동종 점포 수',
+      totalPopulation: '총 유동인구',
+      profileConfidence: '분석 신뢰도',
+      closureRate: '관측 폐업률',
+      overlapRatio: '상권 일치도',
+    };
+    return labels[metric] ?? metric;
+  }
+
+  private sanitizeDisplayText(value: string): string {
+    return value
+      .replace(/\bdemandScore\b/g, '수요 적합도')
+      .replace(/\bcompetitionScore\b/g, '경쟁 강도')
+      .replace(/\bestimatedSalesAmount\b/g, '상권 추정 매출')
+      .replace(/\bstoreCount\b/g, '동종 업종 점포 수')
+      .replace(/\bnearbyStoreCount\b/g, '반경 내 동종 점포 수')
+      .replace(/\bprofileConfidence\b/g, '분석 신뢰도')
+      .replace(/\bTIME_(\d{2})_(\d{2})\b/g, '$1~$2시')
+      .replace(/\b(LOW|MEDIUM|HIGH)\b/g, (label) => {
+        const labels: Record<string, string> = {
+          LOW: '낮음',
+          MEDIUM: '보통',
+          HIGH: '높음',
+        };
+        return labels[label] ?? label;
+      })
+      .replace(/\bhackathon-v1\b/g, '내부 프로필 기준');
+  }
+
+  private attachCharts(
+    output: RecommendationAgentOutput,
+    packet: RecommendationEvidencePacket,
+  ): void {
+    output.recommendations.forEach((recommendation) => {
+      const selections = recommendation.chartSelections ?? [];
+      recommendation.charts = selections
+        .slice(0, 2)
+        .map((selection) =>
+          this.buildChart(
+            selection,
+            recommendation.businessCategoryCode,
+            packet,
+          ),
+        )
+        .filter((chart): chart is RecommendationChart => chart !== null);
+    });
+  }
+
+  private buildChart(
+    selection: RecommendationChartSelection,
+    businessCategoryCode: string,
+    packet: RecommendationEvidencePacket,
+  ): RecommendationChart | null {
+    switch (selection.type) {
+      case 'POPULATION_BY_TIME':
+        return this.buildPopulationTimeChart(packet, selection.reason);
+      case 'POPULATION_BY_AGE':
+        return this.buildPopulationAgeChart(packet, selection.reason);
+      case 'POPULATION_BY_DAY':
+        return this.buildPopulationDayChart(packet, selection.reason);
+      case 'BUSINESS_COMPARISON':
+        return this.buildBusinessComparisonChart(packet, businessCategoryCode);
+      default:
+        return null;
+    }
+  }
+
+  private buildPopulationTimeChart(
+    packet: RecommendationEvidencePacket,
+    fallbackDescription: string,
+  ): RecommendationChart | null {
+    const orderedRanges = [
+      '00:00-06:00',
+      '06:00-11:00',
+      '11:00-14:00',
+      '14:00-17:00',
+      '17:00-21:00',
+      '21:00-24:00',
+    ];
+    const byRange = new Map(
+      packet.population.timeBands.map((band) => [
+        band.timeRange,
+        band.population,
+      ]),
+    );
+    const rows = orderedRanges
+      .map((range) => ({ range, value: byRange.get(range) ?? null }))
+      .filter((row) => row.value !== null);
+    if (rows.length < 3) return null;
+    const peak = rows.reduce((best, row) =>
+      (row.value ?? 0) > (best.value ?? 0) ? row : best,
+    );
+    return {
+      id: 'population-time-band',
+      type: 'BAR',
+      title: '시간대별 유동인구',
+      description:
+        peak.value === null
+          ? fallbackDescription
+          : `${this.formatTimeRange(peak.range)} 유동인구가 ${peak.value.toLocaleString('ko-KR')}명으로 가장 많습니다.`,
+      unit: '명',
+      categories: rows.map((row) => this.formatTimeRange(row.range)),
+      series: [{ name: '유동인구', values: rows.map((row) => row.value) }],
+      statisticsPeriod: this.chartPeriod(packet.population.sourcePeriod),
+    };
+  }
+
+  private buildPopulationAgeChart(
+    packet: RecommendationEvidencePacket,
+    fallbackDescription: string,
+  ): RecommendationChart | null {
+    const labels: Record<string, string> = {
+      TEENS: '10대',
+      '20S': '20대',
+      '30S': '30대',
+      '40S': '40대',
+      '50S': '50대',
+      '60_PLUS': '60대 이상',
+    };
+    const rows = Object.entries(packet.population.ageGroups)
+      .filter(([, value]) => value !== null)
+      .map(([key, value]) => ({ label: labels[key] ?? key, value }));
+    if (rows.length < 3) return null;
+    const peak = rows.reduce((best, row) =>
+      (row.value ?? 0) > (best.value ?? 0) ? row : best,
+    );
+    return {
+      id: 'population-age-group',
+      type: 'BAR',
+      title: '연령대별 유동인구',
+      description:
+        peak.value === null
+          ? fallbackDescription
+          : `${peak.label} 유동인구가 ${peak.value.toLocaleString('ko-KR')}명으로 가장 많습니다.`,
+      unit: '명',
+      categories: rows.map((row) => row.label),
+      series: [{ name: '유동인구', values: rows.map((row) => row.value) }],
+      statisticsPeriod: this.chartPeriod(packet.population.sourcePeriod),
+    };
+  }
+
+  private buildPopulationDayChart(
+    packet: RecommendationEvidencePacket,
+    fallbackDescription: string,
+  ): RecommendationChart | null {
+    const labels: Record<string, string> = {
+      MONDAY: '월요일',
+      TUESDAY: '화요일',
+      WEDNESDAY: '수요일',
+      THURSDAY: '목요일',
+      FRIDAY: '금요일',
+      SATURDAY: '토요일',
+      SUNDAY: '일요일',
+    };
+    const rows = Object.entries(packet.population.dayOfWeek)
+      .filter(([, value]) => value !== null)
+      .map(([key, value]) => ({ label: labels[key] ?? key, value }));
+    if (rows.length < 3) return null;
+    const peak = rows.reduce((best, row) =>
+      (row.value ?? 0) > (best.value ?? 0) ? row : best,
+    );
+    return {
+      id: 'population-day-of-week',
+      type: 'BAR',
+      title: '요일별 유동인구',
+      description:
+        peak.value === null
+          ? fallbackDescription
+          : `${peak.label} 유동인구가 ${peak.value.toLocaleString('ko-KR')}명으로 가장 많습니다.`,
+      unit: '명',
+      categories: rows.map((row) => row.label),
+      series: [{ name: '유동인구', values: rows.map((row) => row.value) }],
+      statisticsPeriod: this.chartPeriod(packet.population.sourcePeriod),
+    };
+  }
+
+  private buildBusinessComparisonChart(
+    packet: RecommendationEvidencePacket,
+    businessCategoryCode: string,
+  ): RecommendationChart | null {
+    const rows = packet.commerce.candidates.filter(
+      (candidate) =>
+        candidate.demandScore !== null && candidate.competitionScore !== null,
+    );
+    if (rows.length < 3) return null;
+    return {
+      id: `business-comparison-${businessCategoryCode}`,
+      type: 'BAR',
+      title: '후보 업종 비교',
+      description: '후보 업종의 수요와 경쟁 지표를 같은 기준으로 비교했습니다.',
+      unit: '점',
+      categories: rows.map((candidate) => candidate.name),
+      series: [
+        {
+          name: '수요 적합도',
+          values: rows.map((candidate) => candidate.demandScore),
+        },
+        {
+          name: '경쟁 강도',
+          values: rows.map((candidate) => candidate.competitionScore),
+        },
+      ],
+      statisticsPeriod: this.chartPeriod(packet.commerce.sourcePeriod),
+    };
+  }
+
+  private chartPeriod(sourcePeriod: string | null): {
+    from: string | null;
+    to: string | null;
+  } {
+    return sourcePeriod
+      ? { from: sourcePeriod, to: sourcePeriod }
+      : { from: null, to: null };
+  }
+
+  private formatTimeRange(value: string): string {
+    const [from, to] = value.split('-');
+    if (!from || !to) return value;
+    return `${from.slice(0, 2)}~${to.slice(0, 2)}시`;
   }
 
   private async publishToolStarted(requestId: string): Promise<void> {

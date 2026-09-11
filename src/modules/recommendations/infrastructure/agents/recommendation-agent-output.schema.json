@@ -23,7 +23,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["rank", "businessCategoryCode", "businessCategoryName", "totalScore", "confidence", "oneLineReason", "evidence", "risks", "operatingTips"],
+        "required": ["rank", "businessCategoryCode", "businessCategoryName", "totalScore", "confidence", "oneLineReason", "evidence", "risks", "operatingTips", "chartSelections"],
         "properties": {
           "rank": { "type": "integer", "minimum": 1, "maximum": 5 },
           "businessCategoryCode": { "type": "string" },
@@ -63,7 +63,23 @@
             }
           },
           "risks": { "type": "array", "items": { "type": "string" } },
-          "operatingTips": { "type": "array", "items": { "type": "string" } }
+          "operatingTips": { "type": "array", "items": { "type": "string" } },
+          "chartSelections": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "reason"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["POPULATION_BY_TIME", "POPULATION_BY_AGE", "POPULATION_BY_DAY", "BUSINESS_COMPARISON"]
+                },
+                "reason": { "type": "string", "maxLength": 160 }
+              }
+            }
+          }
         }
       }
     },

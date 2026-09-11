@@ -236,15 +236,15 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
     const evidence: RecommendationEvidence[] = [
       this.evidence(
         'DEMAND',
-        'demandScore',
+        '수요 적합도',
         candidate.scoreBreakdown.demand,
-        'score',
+        '점',
         packet.commerce.sourcePeriod,
-        `수요 점수 ${candidate.scoreBreakdown.demand}를 반영했습니다.`,
+        `수요 적합도는 ${candidate.scoreBreakdown.demand.toFixed(1)}점으로 평가됩니다.`,
       ),
       this.evidence(
         'COMPETITION',
-        'storeCount',
+        '동종 업종 점포 수',
         candidate.evidenceIds.length > 0
           ? (packet.commerce.candidates.find(
               (item) => item.code === candidate.businessCategoryCode,
@@ -252,26 +252,26 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
           : null,
         '개',
         packet.commerce.sourcePeriod,
-        '상권 단위 업종 점포 수입니다.',
+        '연결 상권에서 확인된 동종 업종 점포 수입니다.',
       ),
       this.evidence(
         'POPULATION',
-        'totalPopulation',
+        '총 유동인구',
         packet.population.totalPopulation,
         '명',
         packet.population.sourcePeriod,
-        '연결 상권의 최신 유동인구 합계입니다.',
+        '연결 상권에서 집계된 유동인구 합계입니다.',
       ),
     ];
     if (profile) {
       evidence.push(
         this.evidence(
           'PROFILE',
-          'profileConfidence',
-          profile.confidenceLevel,
+          '분석 신뢰도',
+          this.toConfidenceLabel(profile.confidenceLevel),
           null,
           'hackathon-v1',
-          `업종 프로필 신뢰도는 ${profile.confidenceLevel}입니다.`,
+          `업종 특성 데이터의 분석 신뢰도는 ${this.toConfidenceLabel(profile.confidenceLevel)}입니다.`,
         ),
       );
     }
@@ -300,7 +300,35 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
       evidence,
       risks: candidate.risks,
       operatingTips: candidate.recommendedOperatingHours,
+      chartSelections: this.chartSelections(packet),
     };
+  }
+
+  private chartSelections(packet: RecommendationEvidencePacket) {
+    const selections: Array<{
+      type: 'POPULATION_BY_TIME' | 'POPULATION_BY_AGE' | 'POPULATION_BY_DAY';
+      reason: string;
+    }> = [];
+    if (
+      packet.population.timeBands.filter((band) => band.population !== null)
+        .length >= 3
+    ) {
+      selections.push({
+        type: 'POPULATION_BY_TIME',
+        reason: '시간대별 유동인구 차이가 운영시간 판단에 도움이 됩니다.',
+      });
+    }
+    if (
+      Object.values(packet.population.ageGroups).filter(
+        (value) => value !== null,
+      ).length >= 3
+    ) {
+      selections.push({
+        type: 'POPULATION_BY_AGE',
+        reason: '연령대별 유동인구 구성이 주요 고객층 판단에 도움이 됩니다.',
+      });
+    }
+    return selections.slice(0, 2);
   }
 
   private evidence(
@@ -393,5 +421,14 @@ export class DeterministicRecommendationAgent implements RecommendationAgentPort
 
   private format(value: number | null): string {
     return value === null ? '결측' : value.toLocaleString('ko-KR');
+  }
+
+  private toConfidenceLabel(value: string): string {
+    const labels: Record<string, string> = {
+      HIGH: '높음',
+      MEDIUM: '보통',
+      LOW: '낮음',
+    };
+    return labels[value] ?? value;
   }
 }
