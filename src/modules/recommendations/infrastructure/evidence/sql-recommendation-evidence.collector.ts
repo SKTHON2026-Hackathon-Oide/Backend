@@ -68,9 +68,9 @@ type PopulationRow = {
 
 type ProfileRow = {
   code: string;
-  target_age_groups: string[];
-  peak_time_ranges: string[];
-  peak_day_types: string[];
+  target_age_groups: unknown;
+  peak_time_ranges: unknown;
+  peak_day_types: unknown;
   floating_population_importance: number;
   resident_population_importance: number;
   worker_population_importance: number;
@@ -92,6 +92,36 @@ const toInteger = (
 ): number | null => {
   const number = toNumber(value);
   return number === null ? null : Math.round(number);
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string');
+  }
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed
+      .slice(1, -1)
+      .split(',')
+      .map((item) => item.trim().replace(/^"|"$/g, '').replace(/\\"/g, '"'))
+      .filter(Boolean);
+  }
+  return [trimmed];
 };
 
 @Injectable()
@@ -442,9 +472,9 @@ export class SqlRecommendationEvidenceCollector {
     );
     return rows.map((row) => ({
       code: row.code,
-      targetAgeGroups: row.target_age_groups ?? [],
-      peakTimeRanges: row.peak_time_ranges ?? [],
-      peakDayTypes: row.peak_day_types ?? [],
+      targetAgeGroups: toStringArray(row.target_age_groups),
+      peakTimeRanges: toStringArray(row.peak_time_ranges),
+      peakDayTypes: toStringArray(row.peak_day_types),
       floatingPopulationImportance: row.floating_population_importance,
       residentPopulationImportance: row.resident_population_importance,
       workerPopulationImportance: row.worker_population_importance,
