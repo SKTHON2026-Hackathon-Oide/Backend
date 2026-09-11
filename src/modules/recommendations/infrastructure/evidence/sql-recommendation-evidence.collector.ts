@@ -106,9 +106,7 @@ const toStringArray = (value: unknown): string[] => {
     try {
       const parsed: unknown = JSON.parse(trimmed);
       return Array.isArray(parsed)
-        ? parsed.filter(
-            (item): item is string => typeof item === 'string',
-          )
+        ? parsed.filter((item): item is string => typeof item === 'string')
         : [];
     } catch {
       return [];
