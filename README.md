@@ -50,6 +50,32 @@ npm run start:dev
 - Swagger: `http://localhost:3000/docs`
 - Health: `http://localhost:3000/api/health`
 
+## 공간 분석 컨텍스트 (단계 1)
+
+좌표에서 분석 대상 건물 후보를 찾고 사용자가 한 건물을 선택하는 API를 제공한다.
+현재 인증 미들웨어가 연결되기 전 단계이므로 요청에는 내부 사용자 ID를
+`X-User-Id` 헤더로 전달한다.
+
+```bash
+curl -X POST http://localhost:3000/api/v1/space-analysis-contexts \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Id: 1' \
+  -d '{"longitude":127.0365,"latitude":37.5442}'
+
+curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/building \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Id: 1' \
+  -d '{"buildingId":"12345"}'
+
+curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/space-detail/skip \
+  -H 'X-User-Id: 1'
+```
+
+정확히 건물 안에 포함되는 후보를 먼저 찾고, 없을 때만 10m 이내 최근접 후보를
+`matchType: "NEARBY"`로 반환한다. 초기 후보에 포함되지 않은 건물이나 다른
+사용자의 컨텍스트는 선택할 수 없다. 건물 선택 뒤에는 건축물대장 `optionId`를
+선택하거나 `source: "USER_INPUT"`으로 층·전용면적을 입력할 수 있다.
+
 ## Database migrations
 
 TypeORM `synchronize`는 사용하지 않는다. 스키마 변경은 `src/database/migrations`에 migration을 추가하고 `npm run migration:run`으로 적용한다.

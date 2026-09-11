@@ -224,3 +224,68 @@ infra/databases/validation/feature-preprocessing-validation.sql
 향후 실제 매출·인허가·건축물 데이터를 이용한 `EMPIRICAL` 버전을 별도 행으로
 추가하고 활성 프로파일만 교체할 수 있도록 업종·버전 유일성과 업종별 활성 행
 유일성을 적용했다.
+
+## 공간 분석 구현 진행 상황
+
+2026-09-11 기준으로 구현 계획의 1단계(좌표→건물 후보→건물 선택)를 추가했다.
+
+- `space_analysis_context` 테이블과 `0000000000011` migration을 추가했다.
+- `POST /api/v1/space-analysis-contexts`가 WGS84 좌표를 검증하고 서울 서비스
+  범위, 정확 포함 건물, 10m 이내 최근접 건물을 순서대로 확인한다.
+- `PUT /api/v1/space-analysis-contexts/{contextId}/building`이 컨텍스트 소유권,
+  만료 상태, 최초 후보 목록을 다시 검증한 뒤 건물을 선택한다.
+- 응답 geometry는 EPSG:5186에서 EPSG:4326으로 변환하고
+  `ST_SimplifyPreserveTopology`로 단순화한 GeoJSON만 반환한다.
+- 현재 인증 모듈에 사용자 식별 미들웨어가 없어서 단계 1 API의 임시 경계로
+  `X-User-Id`를 사용한다. 인증 연결 시 이 헤더 해석부를 현재 사용자 주입부로
+  교체해야 한다.
+
+단위 테스트는 유효 좌표, 서비스 범위 밖, 건물 없음, 후보 외 건물, 사용자 소유권,
+만료 컨텍스트를 검증한다. DB 연결이 가능한 환경에서 `migration:run`과 PostGIS
+fixture로 실제 공간 쿼리 및 `building_geom_gix` 실행 계획을 추가 검증해야 한다.
+
+2026-09-11에 2단계(건축HUB 어댑터)도 구현했다.
+
+- `PnuBuildingHubQueryFactory`가 19자리 PNU를 `sigunguCd`, `bjdongCd`,
+  `platGbCd`, `bun`, `ji`로 엄격히 변환한다.
+- 세 건축HUB endpoint를 페이지 단위로 모두 조회하고, 네트워크 오류·timeout과
+  5xx만 최대 2회 재시도한다. XML/비정상 JSON과 인증·응답 오류는 명시적 오류로
+  처리한다.
+- `mgmBldrgstPk`별 대장 건물을 그룹화하고 주소·건물명·용도·층수·연면적을
+  점수화한다. 점수 차이가 작으면 임의 선택하지 않고 선택 필요 상태를 반환한다.
+- 전유/공용 면적은 호실별로 합산하고, 전유면적이 없을 때만 층별 면적 옵션을
+  반환한다. 층별 면적은 전유면적으로 변환하지 않는다.
+- `building_registry_cache`에 정규화 옵션과 원본 응답을 보관하고 30일(결과 없음은
+  1일) 캐시, 만료 캐시 장애 fallback을 지원한다.
+- 건물 선택 API는 이제 건축HUB 조회 결과를 `registryStatus`, `spaceOptions`,
+  `manualInputAllowed`, `isStale`로 함께 반환하며, 외부 조회 실패 시 수동 입력으로
+  이어질 수 있다.
+
+실제 서비스 키와 PostgreSQL이 없는 환경에서도 PNU·매칭·면적 grouping 및 외부
+응답 fixture 테스트를 수행한다. 실제 key를 사용하는 smoke test와 PostGIS DB
+migration/복원 검증은 DB 연결이 복구된 뒤 실행해야 한다.
+
+3단계(공간 세부정보 선택)도 연결했다.
+
+- `PUT /api/v1/space-analysis-contexts/{contextId}/space-detail`은 서버 캐시의
+  `optionId`를 재조회해 층·전유면적을 확정한다. 클라이언트가 보낸 대장 원본 면적을
+  그대로 신뢰하지 않는다.
+- 전유면적이 없는 층별 옵션은 상세 분석에 사용할 수 없고, 사용자가 수동 입력하거나
+  위치 기반 분석으로 건너뛸 수 있다.
+- `PUT .../space-detail/skip`은 `LOCATION_ONLY_READY`, 유효한 층·전용면적 입력은
+  `SPACE_DETAIL_READY`로 상태와 분석 모드를 함께 확정한다.
+
+## DB migration·dump 검증 결과
+
+개발 DB에 `0000000000011`·`0000000000012`를 적용했다. 전체 custom-format dump를
+갱신하고 다음 checksum을 생성했다.
+
+```text
+skthon-preprocessed-20260911.dump
+SHA-256: d7ba4e2d851c3db7bcd8a30420a3ea9ab47638b7f84754ba7327a7ac3acebb61
+```
+
+별도 임시 DB에 dump를 복원해 migration 13개, `building` 695,754건,
+`space_analysis_context`·`building_registry_cache` 테이블과 registry-cache FK를
+확인했다. `preprocessing-baseline.sql`과
+`feature-preprocessing-validation.sql`도 모두 통과했고, 검증 후 임시 DB는 삭제했다.
