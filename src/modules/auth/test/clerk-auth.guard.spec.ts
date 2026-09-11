@@ -1,5 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { getAuth } from '@clerk/express';
+import type { CurrentUserService } from '../application/services/current-user.service';
 import { ClerkAuthGuard } from '../interfaces/http/clerk-auth.guard';
 
 jest.mock('@clerk/express', () => ({
@@ -10,7 +11,10 @@ const mockedGetAuth = jest.mocked(getAuth);
 
 describe('ClerkAuthGuard', () => {
   const resolveOrRegister = jest.fn();
-  const guard = new ClerkAuthGuard({ resolveOrRegister });
+  const currentUserService = {
+    resolveOrRegister,
+  } as unknown as CurrentUserService;
+  const guard = new ClerkAuthGuard(currentUserService);
   const request = {} as Record<string, unknown>;
   const context = {
     switchToHttp: () => ({ getRequest: () => request }),
