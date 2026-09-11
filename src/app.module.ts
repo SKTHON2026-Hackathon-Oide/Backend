@@ -33,6 +33,10 @@ import { StoresModule } from './modules/stores/stores.module';
         migrationsRun: false,
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
         logging: config.get<string>('DB_LOGGING', 'false') === 'true',
+        ssl:
+          config.get<string>('DB_SSL', 'false') === 'true'
+            ? { rejectUnauthorized: false }
+            : undefined,
         extra: { timezone: '+09:00' },
       }),
     }),

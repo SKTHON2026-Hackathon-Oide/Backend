@@ -35,6 +35,7 @@ config_prefix="${CONFIG_PREFIX:-/skthon/dev/config}"
 append_env DB_HOST "$(parameter "$config_prefix/rds-endpoint")"
 append_env DB_PORT "$(parameter "$config_prefix/rds-port")"
 append_env DB_DATABASE "$(parameter "$config_prefix/rds-database")"
+append_env DB_SSL true
 append_env AWS_REGION "$AWS_REGION"
 
 account_id="$(aws sts get-caller-identity --query Account --output text)"

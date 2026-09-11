@@ -16,6 +16,8 @@ const dataSource = new DataSource({
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_DATABASE ?? 'skthon',
   logging: process.env.DB_LOGGING === 'true',
+  ssl:
+    process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
 });
 
 function createServer(
