@@ -236,10 +236,15 @@ export class BusinessLocationRecommendationOrchestratorService
       parsed_condition: Record<string, unknown>;
     }>;
     try {
-      claim = await this.dataSource.query(
+      const rawClaim: unknown = await this.dataSource.query(
         `UPDATE recommendation_request SET status='RESOLVING_LOCATION', current_stage='RESOLVING_LOCATION', started_at=COALESCE(started_at,now()), lease_owner=$2, lease_expires_at=now()+($3||' minutes')::interval, attempt_count=attempt_count+1, updated_at=now() WHERE id=$1 AND analysis_type='BUSINESS_TO_AREA' AND attempt_count<$4 AND (status='QUEUED' OR (status IN ('RESOLVING_LOCATION','COLLECTING_EVIDENCE','SCORING_WITH_AI','VALIDATING_RESULT') AND lease_expires_at<now())) RETURNING business_category_code, preferred_administrative_area_id, parsed_condition`,
         [requestId, this.workerId, LEASE_MINUTES, MAX_ATTEMPTS],
       );
+      claim = this.unwrapRows<{
+        business_category_code: string;
+        preferred_administrative_area_id: string;
+        parsed_condition: Record<string, unknown>;
+      }>(rawClaim);
     } catch (error) {
       this.logger.error(
         `Failed to claim business location request ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -249,12 +254,12 @@ export class BusinessLocationRecommendationOrchestratorService
     if (!claim[0]) return;
     const stopLeaseHeartbeat = this.startLeaseHeartbeat(requestId);
     try {
-      const condition = claim[0].parsed_condition as {
-        businessCategoryName: string;
-        preferredLocation: { longitude: number; latitude: number };
-        operatingHours: { opensAt: string; closesAt: string };
-        preferredArea: BusinessLocationRequestInput['preferredArea'];
-      };
+      const condition = this.toInputCondition(claim[0].parsed_condition);
+      if (!condition) {
+        const error = new Error('추천 요청의 입력 조건이 올바르지 않습니다.');
+        error.name = 'INVALID_RECOMMENDATION_REQUEST';
+        throw error;
+      }
       const input: BusinessLocationRequestInput = {
         requestId,
         businessCategoryCode: claim[0].business_category_code,
@@ -577,6 +582,57 @@ export class BusinessLocationRecommendationOrchestratorService
     return String(error);
   }
 
+  private toInputCondition(value: unknown): {
+    businessCategoryName: string;
+    preferredLocation: { longitude: number; latitude: number };
+    operatingHours: { opensAt: string; closesAt: string };
+    preferredArea: BusinessLocationRequestInput['preferredArea'];
+  } | null {
+    const parsed =
+      typeof value === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(value) as unknown;
+            } catch {
+              return null;
+            }
+          })()
+        : value;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const condition = parsed as {
+      businessCategoryName?: unknown;
+      preferredLocation?: { longitude?: unknown; latitude?: unknown };
+      operatingHours?: { opensAt?: unknown; closesAt?: unknown };
+      preferredArea?: BusinessLocationRequestInput['preferredArea'];
+    };
+    const longitude = condition.preferredLocation?.longitude;
+    const latitude = condition.preferredLocation?.latitude;
+    if (
+      typeof condition.businessCategoryName !== 'string' ||
+      typeof longitude !== 'number' ||
+      !Number.isFinite(longitude) ||
+      typeof latitude !== 'number' ||
+      !Number.isFinite(latitude) ||
+      typeof condition.operatingHours?.opensAt !== 'string' ||
+      typeof condition.operatingHours?.closesAt !== 'string' ||
+      !condition.preferredArea
+    ) {
+      return null;
+    }
+    return {
+      businessCategoryName: condition.businessCategoryName,
+      preferredLocation: {
+        longitude,
+        latitude,
+      },
+      operatingHours: {
+        opensAt: condition.operatingHours.opensAt,
+        closesAt: condition.operatingHours.closesAt,
+      },
+      preferredArea: condition.preferredArea,
+    };
+  }
+
   private startLeaseHeartbeat(requestId: string): () => void {
     const timer = setInterval(() => {
       void this.dataSource
@@ -626,6 +682,13 @@ export class BusinessLocationRecommendationOrchestratorService
         latitude: source.latitude,
       };
     });
+  }
+
+  private unwrapRows<T>(value: unknown): T[] {
+    if (Array.isArray(value) && value.length === 2 && Array.isArray(value[0])) {
+      return value[0] as T[];
+    }
+    return value as T[];
   }
   private accepted(request: RecommendationRequest) {
     return {
