@@ -1,0 +1,25 @@
+services:
+  mcp:
+    build:
+      context: ../..
+      dockerfile: infra/ai/mcp/Dockerfile
+    environment:
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USERNAME: ${DB_USERNAME:-skthon}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_DATABASE: ${DB_DATABASE:-skthon}
+      DB_LOGGING: ${DB_LOGGING:-false}
+      MCP_PORT: 3001
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 127.0.0.1:${MCP_PORT:-3001}:3001
+
+  codex-agent:
+    build:
+      context: ../..
+      dockerfile: infra/ai/codex-agent/Dockerfile
+    environment:
+      MCP_SERVER_URL: http://mcp:3001/mcp
+      CODEX_MODEL: ${CODEX_MODEL:-gpt-5.6-luna}

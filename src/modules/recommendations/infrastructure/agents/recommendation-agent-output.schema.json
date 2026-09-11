@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "recommendations", "topOperatingTimeBands", "dataAsOf", "missingData"],
+  "properties": {
+    "summary": { "type": "string" },
+    "recommendations": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "type": "object" } },
+    "topOperatingTimeBands": { "type": "array", "maxItems": 5, "items": { "type": "object" } },
+    "dataAsOf": { "type": "object" },
+    "missingData": { "type": "array", "items": { "type": "object" } }
+  }
+}

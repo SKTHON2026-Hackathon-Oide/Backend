@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RECOMMENDATION_AGENT } from './domain/ports/recommendation-agent.port';
 import { DeterministicRecommendationAgent } from './infrastructure/agents/deterministic-recommendation-agent';
+import { CodexCliRecommendationAgent } from './infrastructure/agents/codex-cli-recommendation-agent';
 import { OpenAiResponsesRecommendationAgent } from './infrastructure/agents/openai-responses-recommendation-agent';
 import { SqlRecommendationEvidenceCollector } from './infrastructure/evidence/sql-recommendation-evidence.collector';
 import { RecommendationEvent } from './infrastructure/persistence/typeorm/entities/recommendation-event.entity';
@@ -30,23 +31,30 @@ import { RecommendationController } from './interfaces/http/recommendation.contr
     RecommendationOrchestratorService,
     SqlRecommendationEvidenceCollector,
     DeterministicRecommendationAgent,
+    CodexCliRecommendationAgent,
     OpenAiResponsesRecommendationAgent,
     {
       provide: RECOMMENDATION_AGENT,
       inject: [
         ConfigService,
         DeterministicRecommendationAgent,
+        CodexCliRecommendationAgent,
         OpenAiResponsesRecommendationAgent,
       ],
       useFactory: (
         config: ConfigService,
         deterministicAgent: DeterministicRecommendationAgent,
+        codexAgent: CodexCliRecommendationAgent,
         openAiAgent: OpenAiResponsesRecommendationAgent,
-      ) =>
-        config.get<string>('RECOMMENDATION_AGENT_MODE', 'deterministic') ===
-        'openai'
-          ? openAiAgent
-          : deterministicAgent,
+      ) => {
+        const mode = config.get<string>(
+          'RECOMMENDATION_AGENT_MODE',
+          'deterministic',
+        );
+        if (mode === 'codex') return codexAgent;
+        if (mode === 'openai') return openAiAgent;
+        return deterministicAgent;
+      },
     },
   ],
   exports: [TypeOrmModule],

@@ -82,11 +82,29 @@ curl -X PUT http://localhost:3000/api/v1/space-analysis-contexts/<contextId>/spa
 
 건물 ID만으로 주변 상권·점포·성별·연령대·시간대 유동인구를 수집해 업종 TOP 5와
 영업시간을 분석한다. 요청은 즉시 `202 Accepted`로 반환되고, SSE로 진행 상황을
-구독한다. 현재 기본 agent mode는 외부 연동 없이 검증 가능한 `deterministic`이며,
-OpenAI 분석을 사용할 때는 `.env`에서 `RECOMMENDATION_AGENT_MODE=openai`와
-`OPENAI_API_KEY`를 설정한다. `RECOMMENDATION_MCP_SERVER_URL`은 선택 사항이며,
-설정하면 AI가 원격 MCP 도구도 추가로 사용할 수 있다. 설정하지 않아도 백엔드가
-수집한 evidence packet만으로 분석한다.
+구독한다. 현재 기본 agent mode는 외부 연동 없이 검증 가능한 `deterministic`이다.
+로컬 Codex 작업 컨테이너를 사용할 때는 `RECOMMENDATION_AGENT_MODE=codex`와
+`OPENAI_API_KEY`를 설정한다. `npm run start:dev`는 로컬 MCP 서버를 Docker로 먼저
+기동한 뒤 Nest API를 시작한다. 분석 요청마다 API는 일회성 `codex-agent` 컨테이너를
+실행하고, 이 컨테이너는 Docker 내부 네트워크의 `mcp` 서비스에 접속한다.
+
+`OPENAI_API_KEY`는 이미지나 저장소에 보관하지 않고, 요청 시 `docker compose run -e`
+환경변수로만 Codex 컨테이너에 전달한다. MCP는 기본적으로 호스트의 PostGIS 포트에
+`host.docker.internal`로 접속하므로 로컬 DB를 먼저 실행해야 한다.
+
+```bash
+docker compose --env-file infra/databases/.env \\
+  -f infra/databases/docker-compose.yml up -d
+
+# backend/.env
+# RECOMMENDATION_AGENT_MODE=codex
+# OPENAI_API_KEY=...
+npm run start:dev
+```
+
+AWS에서는 `codex-agent` 이미지를 API 컨테이너에서 직접 실행하지 않는다. 동일한
+입력/출력 계약을 사용하는 일회성 ECS Fargate 작업이나 다른 작업형 서버리스 실행기로
+교체하고, API는 요청 상태와 SSE만 담당한다.
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/buildings/<buildingId>/recommendation-requests \
