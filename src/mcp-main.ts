@@ -8,6 +8,9 @@ import { SqlRecommendationEvidenceCollector } from './modules/recommendations/in
 import { SqlBusinessLocationEvidenceCollector } from './modules/recommendations/infrastructure/evidence/sql-business-location-evidence.collector';
 
 const port = Number(process.env.MCP_PORT ?? 3001);
+const positiveId = z
+  .union([z.string().regex(/^[1-9]\d*$/), z.number().int().positive().safe()])
+  .transform((value) => String(value));
 
 const dataSource = new DataSource({
   type: 'postgres',
@@ -78,11 +81,13 @@ function createServer(
         longitude: z.number().min(124).max(132),
         latitude: z.number().min(33).max(39),
         preferredArea: z.object({
-          id: z.string().regex(/^[1-9]\\d*$/),
+          // Codex can serialize a JSON bigint-looking ID as a number. Normalize
+          // that representation before it reaches PostgreSQL's bigint parameter.
+          id: positiveId,
           code: z.string().min(1),
           name: z.string().min(1),
           areaType: z.string().min(1),
-          parentId: z.string().nullable(),
+          parentId: positiveId.nullable(),
           parentCode: z.string().nullable(),
           parentName: z.string().nullable(),
           matchMethod: z.enum(['CONTAINS', 'BOUNDARY']),

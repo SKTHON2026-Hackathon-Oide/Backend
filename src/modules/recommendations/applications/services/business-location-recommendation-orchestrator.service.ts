@@ -510,7 +510,12 @@ export class BusinessLocationRecommendationOrchestratorService
   ): Promise<BusinessLocationRecommendationOutput> {
     const agent = this.selectedAgent();
     try {
-      return await agent.generate(packet);
+      const output = await agent.generate(packet);
+      this.validateOutput(
+        output,
+        packet.candidates.map((candidate) => candidate.commercialAreaId),
+      );
+      return output;
     } catch (firstError) {
       let error: unknown = firstError;
       if (this.isRetryableAgentError(firstError)) {
@@ -550,14 +555,16 @@ export class BusinessLocationRecommendationOrchestratorService
 
   private canUseFallback(error: unknown): boolean {
     return (
-      error instanceof Error &&
-      [
-        'MODEL_TIMEOUT',
-        'CODEX_AGENT_RUNNER_ERROR',
-        'AGENT_RESULT_NOT_AVAILABLE',
-        'INVALID_MODEL_OUTPUT',
-        'RECOMMENDATION_AGENT_NOT_CONFIGURED',
-      ].includes(error.name)
+      (error instanceof RecommendationFlowError &&
+        error.code === 'INVALID_MODEL_OUTPUT') ||
+      (error instanceof Error &&
+        [
+          'MODEL_TIMEOUT',
+          'CODEX_AGENT_RUNNER_ERROR',
+          'AGENT_RESULT_NOT_AVAILABLE',
+          'INVALID_MODEL_OUTPUT',
+          'RECOMMENDATION_AGENT_NOT_CONFIGURED',
+        ].includes(error.name))
     );
   }
 
