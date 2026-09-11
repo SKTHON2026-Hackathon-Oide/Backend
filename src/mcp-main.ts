@@ -122,13 +122,13 @@ function createServer(
   return server;
 }
 
-async function bootstrap(): Promise<void> {
-  await dataSource.initialize();
-  const collector = new SqlRecommendationEvidenceCollector(dataSource);
-  const businessLocationCollector = new SqlBusinessLocationEvidenceCollector(
-    dataSource,
-  );
-  const app = createMcpExpressApp();
+export function createApp(
+  collector: SqlRecommendationEvidenceCollector,
+  businessLocationCollector: SqlBusinessLocationEvidenceCollector,
+) {
+  // Match app host validation to the container's actual listen address.
+  // The SDK's localhost default rejects Fargate requests to the private IP.
+  const app = createMcpExpressApp({ host: '0.0.0.0' });
 
   app.get('/health', (_request, response) => {
     response.status(200).json({ status: 'ok' });
@@ -164,9 +164,18 @@ async function bootstrap(): Promise<void> {
     });
   });
 
+  return app;
+}
+
+async function bootstrap(): Promise<void> {
+  await dataSource.initialize();
+  const app = createApp(
+    new SqlRecommendationEvidenceCollector(dataSource),
+    new SqlBusinessLocationEvidenceCollector(dataSource),
+  );
   app.listen(port, '0.0.0.0', () => {
     console.log(`Location recommendation MCP server listening on ${port}`);
   });
 }
 
-void bootstrap();
+if (require.main === module) void bootstrap();

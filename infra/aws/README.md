@@ -37,3 +37,15 @@ Clerk Dashboard의 dev/production Webhooks에 각각 backend URL을 등록하고
 signing secret은 해당 환경의 `CLERK_WEBHOOK_SIGNING_SECRET`으로만 저장한다.
 
 CI는 모든 `main` commit에서 backend, MCP, Codex Agent image를 같은 commit SHA tag로 ECR에 push한다. MCP → backend 순으로 SSM 배포하며 backend 배포 전 production migration을 실행한다.
+
+## MCP 연결 실패 진단
+
+`Invalid Host: <MCP 사설 IP>`가 발생하면 MCP Express app의 host 설정과
+실제 listen 주소가 일치하는지 확인한다. SDK의 기본 localhost 검증은
+Fargate의 사설 IP Host 헤더를 403으로 거부하며, localhost 헬스체크는 통과한다.
+배포 스크립트는 Parameter Store의 MCP URL Host로 health와 tools/list를 확인한다.
+네트워크 접근은 compute stack의 MCP security group에서 Codex task로 제한한다.
+
+Codex Agent는 MCP를 `required=true`로 실행하므로 초기화 실패 시 오류 로그를
+출력하고 실패 종료한다. 이 수정은 MCP 이미지 재배포와 새 Codex Agent 이미지의
+task definition 등록이 모두 필요하다. 기존 완료 결과는 자동으로 재실행되지 않는다.

@@ -67,10 +67,22 @@ if [ "$SERVICE_KIND" = backend ]; then
   done
 elif [ "$SERVICE_KIND" = mcp ]; then
   append_env MCP_PORT 3001
+  mcp_url="$(parameter "$config_prefix/mcp-server-url")"
+  mcp_host="$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.argv[1]).netloc)' "$mcp_url")"
   docker run -d --name "$SERVICE_NAME" --restart unless-stopped \
     --env-file "$runtime_env" -p 3001:3001 "$IMAGE_URI"
   for _ in $(seq 1 30); do
-    curl --fail --silent http://127.0.0.1:3001/health >/dev/null && exit 0
+    # Use the same Host as Fargate; a loopback-only probe misses SDK Host rejection.
+    if curl --fail --silent --max-time 5 -H "Host: $mcp_host" \
+      http://127.0.0.1:3001/health >/dev/null \
+      && curl --fail --silent --max-time 5 -H "Host: $mcp_host" \
+        -H 'Content-Type: application/json' \
+        -H 'Accept: application/json, text/event-stream' \
+        --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+        http://127.0.0.1:3001/mcp \
+        | grep 'get_business_location_recommendation_evidence' >/dev/null; then
+      exit 0
+    fi
     sleep 2
   done
 else

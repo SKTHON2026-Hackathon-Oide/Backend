@@ -51,6 +51,8 @@ fi
 cp "$prompt_file" /tmp/prompt.txt
 
 if ! timeout --signal=TERM --kill-after=5s 105s codex exec \
+  -c 'mcp_servers.location-recommendation.required=true' \
+  -c 'mcp_servers.location-recommendation.startup_timeout_sec=30' \
   --ephemeral \
   --sandbox danger-full-access \
   --skip-git-repo-check \
