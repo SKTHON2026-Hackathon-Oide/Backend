@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "recommendations", "warnings", "dataLimitations", "dataAsOf"],
+  "properties": {
+    "summary": { "type": "string" },
+    "recommendations": {
+      "type": "array", "minItems": 1, "maxItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["rank", "commercialAreaId", "commercialAreaCode", "commercialAreaName", "administrativeArea", "longitude", "latitude", "totalScore", "scoreBreakdown", "oneLineReason", "evidence", "operatingHourFit", "risks", "operatingTips", "evidenceIds"],
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "commercialAreaId": { "type": "string" }, "commercialAreaCode": { "type": "string" }, "commercialAreaName": { "type": "string" },
+          "administrativeArea": { "type": "object", "additionalProperties": false, "required": ["code", "name"], "properties": { "code": { "type": ["string", "null"] }, "name": { "type": ["string", "null"] } } },
+          "longitude": { "type": ["number", "null"] }, "latitude": { "type": ["number", "null"] }, "totalScore": { "type": "number", "minimum": 0, "maximum": 100 },
+          "scoreBreakdown": { "type": "object", "additionalProperties": false, "required": ["demand", "supplyOpportunity", "customerFit", "timeFit", "competitionHealth", "dataConfidence"], "properties": { "demand": { "type": "number" }, "supplyOpportunity": { "type": "number" }, "customerFit": { "type": "number" }, "timeFit": { "type": "number" }, "competitionHealth": { "type": "number" }, "dataConfidence": { "type": "number" } } },
+          "oneLineReason": { "type": "string" }, "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["metric", "value", "unit", "interpretation"], "properties": { "metric": { "type": "string" }, "value": { "type": ["string", "number", "null"] }, "unit": { "type": ["string", "null"] }, "interpretation": { "type": "string" } } } },
+          "operatingHourFit": { "type": "object", "additionalProperties": false, "required": ["score", "matchedTimeBands", "explanation"], "properties": { "score": { "type": "number" }, "matchedTimeBands": { "type": "array", "items": { "type": "string" } }, "explanation": { "type": "string" } } },
+          "risks": { "type": "array", "items": { "type": "string" } }, "operatingTips": { "type": "array", "items": { "type": "string" } }, "evidenceIds": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }, "dataLimitations": { "type": "array", "items": { "type": "string" } },
+    "dataAsOf": { "type": "object", "additionalProperties": false, "required": ["commerce", "floatingPopulation", "profile"], "properties": { "commerce": { "type": ["string", "null"] }, "floatingPopulation": { "type": ["string", "null"] }, "profile": { "type": ["string", "null"] } } }
+  }
+}
