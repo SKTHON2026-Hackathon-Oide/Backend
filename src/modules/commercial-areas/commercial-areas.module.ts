@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
 import { AreaBusinessFeature } from './infrastructure/persistence/typeorm/entities/area-business-feature.entity';
 import { BusinessCategoryAnalysisProfile } from './infrastructure/persistence/typeorm/entities/business-category-analysis-profile.entity';
 import { BusinessCategory } from './infrastructure/persistence/typeorm/entities/business-category.entity';
@@ -11,6 +12,7 @@ import { BusinessCategoryController } from './interfaces/http/business-category.
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       CommercialArea,
       LandUseZone,
