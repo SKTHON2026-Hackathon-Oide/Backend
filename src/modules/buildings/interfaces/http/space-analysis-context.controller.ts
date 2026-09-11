@@ -64,6 +64,8 @@ export class SpaceAnalysisContextController {
         userId: this.parseUserId(userIdHeader),
         contextId,
         buildingId: body.buildingId,
+        spaceOptionsPage: body.spaceOptionsPage,
+        spaceOptionsPageSize: body.spaceOptionsPageSize,
       });
     } catch (error) {
       throw this.toHttpException(error);

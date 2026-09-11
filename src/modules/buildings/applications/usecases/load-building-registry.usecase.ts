@@ -20,7 +20,10 @@ import {
   BuildingLedgerMatchService,
   type LedgerMatchCandidate,
 } from '../../domain/services/building-ledger-match.service';
-import { RegistrySpaceOptionService } from '../../domain/services/registry-space-option.service';
+import {
+  RegistrySpaceOptionService,
+  type RegistrySpaceOption,
+} from '../../domain/services/registry-space-option.service';
 import {
   BuildingRegistryResult,
   RegistryBuildingCandidate,
@@ -28,10 +31,11 @@ import {
 import { SpaceAnalysisContextError } from '../../domain/services/space-analysis-context.error';
 import { BuildingHubClientError } from '../../infrastructure/external/building-hub/building-hub.types';
 
-const CACHE_VERSION = 'building-hub-v4';
+const CACHE_VERSION = 'building-hub-v5';
 const CACHE_TTL_DAYS = 30;
 const NOT_FOUND_TTL_DAYS = 1;
-const MAX_AMBIGUOUS_CANDIDATES = 20;
+const MAX_REGISTRY_GROUPS = 20;
+const DEFAULT_PAGE_SIZE = 100;
 
 @Injectable()
 export class LoadBuildingRegistryUseCase {
@@ -48,7 +52,10 @@ export class LoadBuildingRegistryUseCase {
     private readonly cacheRepository: BuildingRegistryCacheRepository,
   ) {}
 
-  async execute(buildingId: string): Promise<BuildingRegistryResult> {
+  async execute(
+    buildingId: string,
+    pagination: { page?: number; pageSize?: number } = {},
+  ): Promise<BuildingRegistryResult> {
     const building = await this.buildingLookup.findById(buildingId);
     if (!building) {
       throw new SpaceAnalysisContextError(
@@ -58,7 +65,7 @@ export class LoadBuildingRegistryUseCase {
     }
 
     if (!building.pnu) {
-      return this.unavailable('PNU_UNAVAILABLE');
+      return this.paginate(this.unavailable('PNU_UNAVAILABLE'), pagination);
     }
 
     let query: BuildingHubQuery;
@@ -66,7 +73,7 @@ export class LoadBuildingRegistryUseCase {
       query = this.queryFactory.create(building.pnu);
     } catch (error) {
       if (error instanceof SpaceAnalysisContextError) {
-        return this.unavailable(error.code);
+        return this.paginate(this.unavailable(error.code), pagination);
       }
       throw error;
     }
@@ -81,7 +88,7 @@ export class LoadBuildingRegistryUseCase {
       now,
     );
     if (validCache?.normalizedOptions) {
-      return this.fromCache(validCache, false);
+      return this.paginate(this.fromCache(validCache, false), pagination);
     }
 
     try {
@@ -99,16 +106,16 @@ export class LoadBuildingRegistryUseCase {
         now,
         existingCache,
       );
-      return { ...result, cacheId: savedCache.id };
+      return this.paginate({ ...result, cacheId: savedCache.id }, pagination);
     } catch (error) {
       const staleCache = await this.cacheRepository.findLatest(
         buildingId,
         requestFingerprint,
       );
       if (staleCache?.normalizedOptions) {
-        return this.fromCache(staleCache, true);
+        return this.paginate(this.fromCache(staleCache, true), pagination);
       }
-      return this.unavailable(this.errorCode(error));
+      return this.paginate(this.unavailable(this.errorCode(error)), pagination);
     }
   }
 
@@ -127,6 +134,7 @@ export class LoadBuildingRegistryUseCase {
         ambiguousCandidates: [],
         housingPrice: null,
         spaceOptions: [],
+        spaceOptionsPage: this.pageInfo(0, 1, DEFAULT_PAGE_SIZE),
         manualInputAllowed: true,
         isStale: false,
         errorCode: null,
@@ -136,13 +144,33 @@ export class LoadBuildingRegistryUseCase {
 
     const match = this.matchService.match(building, raw.basis);
     if (match.status === 'AMBIGUOUS') {
+      const groups = this.ambiguousGroups(match.candidates);
+      const optionsByGroup = new Map(
+        groups.map((group) => [
+          group.registryGroupKey,
+          this.spaceOptionsFor(
+            raw,
+            new Set(group.registryKeys),
+            group.registryGroupKey,
+          ),
+        ]),
+      );
+      const spaceOptions = [...optionsByGroup.values()].flat();
       return {
-        registryStatus:
-          BuildingRegistryStatus.REGISTRY_BUILDING_SELECTION_REQUIRED,
+        registryStatus: this.statusForOptions(spaceOptions),
         ledgerMatch: null,
-        ambiguousCandidates: this.toAmbiguousCandidates(match.candidates),
+        ambiguousCandidates: groups.map((group) => ({
+          ...group,
+          spaceOptionCount:
+            optionsByGroup.get(group.registryGroupKey)?.length ?? 0,
+        })),
         housingPrice: null,
-        spaceOptions: [],
+        spaceOptions,
+        spaceOptionsPage: this.pageInfo(
+          spaceOptions.length,
+          1,
+          DEFAULT_PAGE_SIZE,
+        ),
         manualInputAllowed: true,
         isStale: false,
         errorCode: null,
@@ -157,6 +185,7 @@ export class LoadBuildingRegistryUseCase {
         ambiguousCandidates: [],
         housingPrice: null,
         spaceOptions: [],
+        spaceOptionsPage: this.pageInfo(0, 1, DEFAULT_PAGE_SIZE),
         manualInputAllowed: true,
         isStale: false,
         errorCode: null,
@@ -170,31 +199,9 @@ export class LoadBuildingRegistryUseCase {
         .map((record) => record.mgmBldrgstPk)
         .filter((value): value is string => value !== null),
     );
-    const areas =
-      registryKeys.size === 0
-        ? raw.areas
-        : raw.areas.filter(
-            (record) =>
-              record.mgmBldrgstPk === null ||
-              registryKeys.has(record.mgmBldrgstPk),
-          );
-    const floors =
-      registryKeys.size === 0
-        ? raw.floors
-        : raw.floors.filter(
-            (record) =>
-              record.mgmBldrgstPk === null ||
-              registryKeys.has(record.mgmBldrgstPk),
-          );
-    const spaceOptions = this.optionService.create(areas, floors);
+    const spaceOptions = this.spaceOptionsFor(raw, registryKeys, null);
     const housingPrice = this.housingPriceFor(raw.housingPrices, registryKeys);
-    const registryStatus = spaceOptions.some(
-      (option) => option.exclusiveAreaSqm !== null,
-    )
-      ? BuildingRegistryStatus.UNIT_OPTIONS_AVAILABLE
-      : spaceOptions.length > 0
-        ? BuildingRegistryStatus.FLOOR_OPTIONS_ONLY
-        : BuildingRegistryStatus.BUILDING_ONLY;
+    const registryStatus = this.statusForOptions(spaceOptions);
     const sourceAsOf =
       selected.group.basisRecords
         .map((record) => record.sourceCreatedAt)
@@ -211,6 +218,11 @@ export class LoadBuildingRegistryUseCase {
       ambiguousCandidates: [],
       housingPrice,
       spaceOptions,
+      spaceOptionsPage: this.pageInfo(
+        spaceOptions.length,
+        1,
+        DEFAULT_PAGE_SIZE,
+      ),
       manualInputAllowed: true,
       isStale: false,
       errorCode: null,
@@ -271,6 +283,7 @@ export class LoadBuildingRegistryUseCase {
       ambiguousCandidates: [],
       housingPrice: null,
       spaceOptions: [],
+      spaceOptionsPage: this.pageInfo(0, 1, DEFAULT_PAGE_SIZE),
       manualInputAllowed: true,
       isStale: false,
       errorCode,
@@ -310,15 +323,98 @@ export class LoadBuildingRegistryUseCase {
       : null;
   }
 
-  private toAmbiguousCandidates(
+  private ambiguousGroups(
     candidates: LedgerMatchCandidate[],
   ): RegistryBuildingCandidate[] {
-    return candidates.slice(0, MAX_AMBIGUOUS_CANDIDATES).map((candidate) => ({
-      registryKey: candidate.group.registryKey,
-      buildingName: candidate.group.buildingName,
-      address: candidate.group.address,
-      score: candidate.score,
-      reasons: candidate.reasons,
-    }));
+    const groups = new Map<
+      string,
+      RegistryBuildingCandidate & { keys: Set<string> }
+    >();
+    for (const candidate of candidates) {
+      const identity = `${this.normalize(candidate.group.buildingName)}|${this.normalize(candidate.group.address)}`;
+      const current = groups.get(identity);
+      if (current) {
+        current.keys.add(candidate.group.registryKey);
+        continue;
+      }
+      const registryGroupKey = `grp_${createHash('sha256')
+        .update(identity)
+        .digest('hex')
+        .slice(0, 20)}`;
+      groups.set(identity, {
+        registryGroupKey,
+        registryKeys: [],
+        keys: new Set([candidate.group.registryKey]),
+        buildingName: candidate.group.buildingName,
+        address: candidate.group.address,
+        score: candidate.score,
+        reasons: candidate.reasons,
+        spaceOptionCount: 0,
+      });
+    }
+
+    return [...groups.values()]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, MAX_REGISTRY_GROUPS)
+      .map(({ keys, ...group }) => ({
+        ...group,
+        registryKeys: [...keys],
+      }));
+  }
+
+  private spaceOptionsFor(
+    raw: Awaited<ReturnType<BuildingRegistryGateway['fetchByParcel']>>,
+    registryKeys: Set<string>,
+    registryGroupKey: string | null,
+  ): RegistrySpaceOption[] {
+    const includesKey = (value: string | null) =>
+      registryKeys.size === 0 || value === null || registryKeys.has(value);
+    return this.optionService
+      .create(
+        raw.areas.filter((record) => includesKey(record.mgmBldrgstPk)),
+        raw.floors.filter((record) => includesKey(record.mgmBldrgstPk)),
+      )
+      .map((option) => ({ ...option, registryGroupKey }));
+  }
+
+  private statusForOptions(
+    options: RegistrySpaceOption[],
+  ): BuildingRegistryStatus {
+    return options.some((option) => option.exclusiveAreaSqm !== null)
+      ? BuildingRegistryStatus.UNIT_OPTIONS_AVAILABLE
+      : options.length > 0
+        ? BuildingRegistryStatus.FLOOR_OPTIONS_ONLY
+        : BuildingRegistryStatus.BUILDING_ONLY;
+  }
+
+  private paginate(
+    result: BuildingRegistryResult,
+    pagination: { page?: number; pageSize?: number },
+  ): BuildingRegistryResult {
+    const page = Math.max(1, pagination.page ?? 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(1, pagination.pageSize ?? DEFAULT_PAGE_SIZE),
+    );
+    const totalItems = result.spaceOptions.length;
+    const start = (page - 1) * pageSize;
+    return {
+      ...result,
+      spaceOptions: result.spaceOptions.slice(start, start + pageSize),
+      spaceOptionsPage: this.pageInfo(totalItems, page, pageSize),
+    };
+  }
+
+  private pageInfo(totalItems: number, page: number, pageSize: number) {
+    return {
+      page,
+      pageSize,
+      totalItems,
+      totalPages: Math.max(1, Math.ceil(totalItems / pageSize)),
+    };
+  }
+
+  private normalize(value: string | null): string {
+    return (value ?? '').replace(/\s+/g, '').toLocaleLowerCase('ko-KR');
   }
 }

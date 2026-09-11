@@ -6,6 +6,8 @@ import {
 
 export interface RegistrySpaceOption {
   optionId: string;
+  registryKey: string | null;
+  registryGroupKey: string | null;
   dongName: string | null;
   floor: number | null;
   floorName: string | null;
@@ -36,6 +38,7 @@ export class RegistrySpaceOptionService {
     for (const record of records) {
       if (record.areaKind === 'UNKNOWN' || record.areaSqm === null) continue;
       const key = [
+        record.mgmBldrgstPk ?? '',
         record.dongName ?? '',
         record.floor ?? '',
         record.floorName ?? '',
@@ -61,6 +64,8 @@ export class RegistrySpaceOptionService {
 
       groups.set(key, {
         optionId: this.optionId(key),
+        registryKey: record.mgmBldrgstPk,
+        registryGroupKey: null,
         dongName: record.dongName,
         floor: record.floor,
         floorName: record.floorName,
@@ -84,6 +89,7 @@ export class RegistrySpaceOptionService {
     for (const record of records) {
       if (record.floorAreaSqm === null) continue;
       const key = [
+        record.mgmBldrgstPk ?? '',
         record.dongName ?? '',
         record.floor ?? '',
         record.floorName ?? '',
@@ -91,6 +97,8 @@ export class RegistrySpaceOptionService {
       if (options.has(key)) continue;
       options.set(key, {
         optionId: this.optionId(key),
+        registryKey: record.mgmBldrgstPk,
+        registryGroupKey: null,
         dongName: record.dongName,
         floor: record.floor,
         floorName: record.floorName,

@@ -76,7 +76,10 @@ export class SelectAnalysisBuildingUseCase {
       context.status = SpaceAnalysisContextStatus.REGISTRY_LOADING;
       context.updatedAt = new Date();
       savedContext = await this.contextRepository.save(context);
-      const registry = await this.registryLoader.execute(command.buildingId);
+      const registry = await this.registryLoader.execute(command.buildingId, {
+        page: command.spaceOptionsPage,
+        pageSize: command.spaceOptionsPageSize,
+      });
       context.status = SpaceAnalysisContextStatus.DETAIL_SELECTION_REQUIRED;
       context.selectedRegistryCacheId = registry.cacheId;
       context.updatedAt = new Date();
