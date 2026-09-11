@@ -1,5 +1,10 @@
 # 상권 추천 MCP 개발 계획 초안
 
+> 공간→업종 기능의 확정된 주소 검색, 건물 선택, 건축HUB 세부정보 선택, MCP·AI
+> 구현 순서와 DB dump/commit/push 완료 규칙은
+> [`space-analysis-building-registry-implementation-plan.md`](./space-analysis-building-registry-implementation-plan.md)를
+> 우선 참고한다.
+
 ## 1. 목표
 
 하나의 원격 MCP 서버가 상권·건물·업종 통계 데이터를 읽기 전용으로 조회하고,
